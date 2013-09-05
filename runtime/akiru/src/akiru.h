@@ -1,12 +1,12 @@
-/*!
- * Copyright (C) 2005-2012 Gekko Emulator
+/**
+ * Copyright (C) 2013 Akiru Emulator
  *
- * \file    pcafe.h
- * \author  ShizZy <shizzy247@gmail.com>
- * \date    2012-02-11
- * \brief   Main entry point
+ * @file    akiru.cpp
+ * @author  ShizZy <shizzy247@gmail.com>
+ * @date    2013-09-04
+ * @brief   Main entry point
  *
- * \section LICENSE
+ * @section LICENSE
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
  * published by the Free Software Foundation; either version 2 of
@@ -22,14 +22,14 @@
  * http://code.google.com/p/gekko-gc-emu/
  */
 
-#ifndef PCAFE_PCAFE_H_
-#define PCAFE_PCAFE_H_
+#ifndef AKIRU_AKIRU_H_
+#define AKIRU_AKIRU_H_
 
 #include "version.h"
 
-#define APP_NAME        "gekko"
+#define APP_NAME        "akiru"
 #define APP_VERSION     "0.31-" VERSION
 #define APP_TITLE       APP_NAME " " APP_VERSION
-#define	COPYRIGHT       "Copyright (C) 2005-2012 Gekko Team"
+#define	COPYRIGHT       "Copyright (C) 2005-2012 Akiru Team"
 
-#endif // PCAFE_PCAFE_H_
+#endif // AKIRU_AKIRU_H_
