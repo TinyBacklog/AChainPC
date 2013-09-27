@@ -35,33 +35,23 @@ class EmuWindow;
 
 namespace Core {
 
-// State of the full emulator
-typedef enum {
-	SYS_NULL = 0,   ///< System is in null state, nothing initialized
-	SYS_IDLE,       ///< System is in an initialized state, but not running
-	SYS_RUNNING,    ///< System is running
-	SYS_LOADING,    ///< System is loading a ROM
-	SYS_HALTED,     ///< System is halted (error)
-	SYS_STALLED,    ///< System is stalled (unused)
-	SYS_DEBUG,      ///< System is in a special debug mode (unused)
-	SYS_DIE         ///< System is shutting down
-} SystemState;
-
-
 /// Start the core
 void Start();
 
-/// Kill the core
-void Kill();
+/// Run the core CPU loop
+void RunLoop();
 
-/// Stop the core
+/// Step the CPU one instruction
+void SingleStep();
+
+/// Halt the core
+void Halt();
+
+/// Kill the core
 void Stop();
 
 /// Initialize the core
 int Init(EmuWindow* emu_window);
-
-extern SystemState	g_state;	///< State of the emulator
-extern bool			g_started;	///< Whether or not the emulator has been started
 
 } // namespace
 
