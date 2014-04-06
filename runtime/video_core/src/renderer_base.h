@@ -51,6 +51,9 @@ public:
     ~RendererBase() {
     }
 
+    /// Swap buffers (render frame)
+    virtual void SwapBuffers() = 0;
+
     /** 
      * Blits the EFB to the external framebuffer (XFB)
      * @param src_rect Source rectangle in EFB to copy
@@ -70,6 +73,24 @@ public:
      */
     virtual void Clear(const Rect& rect, bool enable_color, bool enable_alpha, bool enable_z, 
         u32 color, u32 z) = 0;
+
+    /// Sets the renderer viewport location, width, and height
+    virtual void SetViewport(int x, int y, int width, int height) = 0;
+
+    /// Sets the renderer depthrange, znear and zfar
+    virtual void SetDepthRange(double znear, double zfar) = 0;
+
+    /* Sets the scissor box
+     * @param rect Renderer rectangle to set scissor box to
+     */
+    virtual void SetScissorBox(const Rect& rect) = 0;
+
+    /**
+     * Sets the line and point size
+     * @param line_width Line width to use
+     * @param point_size Point size to use
+     */
+    virtual void SetLinePointSize(f32 line_width, f32 point_size) = 0;
 
     /**
      * Set a specific render mode
@@ -94,11 +115,6 @@ public:
 
     /// Shutdown the renderer
     virtual void ShutDown() = 0;
-
-    /// Converts EFB rectangle coordinates to renderer rectangle coordinates
-    //static Rect EFBToRendererRect(const Rect& rect) {
-	   // return Rect(rect.x0_, kGCEFBHeight - rect.y0_, rect.x1_, kGCEFBHeight - rect.y1_);
-    //}
 
     // Getter/setter functions:
     // ------------------------
