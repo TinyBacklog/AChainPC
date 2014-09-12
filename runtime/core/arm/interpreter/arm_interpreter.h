@@ -10,7 +10,7 @@
 #include "core/arm/skyeye_common/armdefs.h"
 #include "core/arm/skyeye_common/armemu.h"
 
-class ARM_Interpreter : virtual public ARM_Interface {
+class ARM_Interpreter final : virtual public ARM_Interface {
 public:
 
     ARM_Interpreter();
