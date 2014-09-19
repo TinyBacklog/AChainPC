@@ -4,7 +4,13 @@
 
 #pragma once
 
+#include <memory>
+
 #include "common/common_types.h"
+#include "common/bit_field.h"
+
+#include "core/file_sys/file.h"
+#include "core/file_sys/directory.h"
 
 #include "core/hle/kernel/kernel.h"
 
@@ -12,6 +18,13 @@
 // FileSys namespace
 
 namespace FileSys {
+
+union Mode {
+    u32 hex;
+    BitField<0, 1, u32> read_flag;
+    BitField<1, 1, u32> write_flag;
+    BitField<2, 1, u32> create_flag;
+};
 
 class Archive : NonCopyable {
 public:
@@ -34,6 +47,21 @@ public:
      * @return IdCode of the archive
      */
     virtual IdCode GetIdCode() const = 0;
+
+    /**
+     * Open a file specified by its path, using the specified mode
+     * @param path Path relative to the archive
+     * @param mode Mode to open the file with
+     * @return Opened file, or nullptr
+     */
+    virtual std::unique_ptr<File> OpenFile(const std::string& path, const Mode mode) const = 0;
+
+    /**
+     * Open a directory specified by its path
+     * @param path Path relative to the archive
+     * @return Opened directory, or nullptr
+     */
+    virtual std::unique_ptr<Directory> OpenDirectory(const std::string& path) const = 0;
 
     /**
      * Read data from the archive
