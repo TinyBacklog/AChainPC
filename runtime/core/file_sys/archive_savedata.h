@@ -21,8 +21,7 @@ public:
 
     /**
      * Initialize the archive.
-     * @return CreateSaveDataResult AlreadyExists if the SaveData folder already exists,
-     * Success if it was created properly and Failure if there was any error
+     * @return true if it initialized successfully
      */
     bool Initialize();
 
