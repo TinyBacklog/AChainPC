@@ -11,18 +11,15 @@
 
 namespace BOSS_U {
 
-    const Interface::FunctionInfo FunctionTable[] = {
-        {0x00020100, nullptr,               "GetStorageInfo"},
-    };
+const Interface::FunctionInfo FunctionTable[] = {
+    {0x00020100, nullptr,               "GetStorageInfo"},
+};
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Interface class
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Interface class
 
-    Interface::Interface() {
-        Register(FunctionTable, ARRAY_SIZE(FunctionTable));
-    }
-
-    Interface::~Interface() {
-    }
+Interface::Interface() {
+    Register(FunctionTable, ARRAY_SIZE(FunctionTable));
+}
 
 } // namespace
