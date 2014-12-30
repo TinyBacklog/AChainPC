@@ -17,15 +17,20 @@ namespace FileSys {
 /// File system interface to the SaveData archive
 class Archive_SaveData final : public DiskArchive {
 public:
-    Archive_SaveData(const std::string& mount_point, u64 program_id);
-
-    /**
-     * Initialize the archive.
-     * @return true if it initialized successfully
-     */
-    bool Initialize();
+    Archive_SaveData(const std::string& mount_point);
 
     std::string GetName() const override { return "SaveData"; }
+
+    ResultCode Open(const Path& path) override;
+
+    ResultCode Format(const Path& path) const override;
+
+    const std::string& GetMountPoint() const override {
+        return concrete_mount_point;
+    }
+
+protected:
+    std::string concrete_mount_point;
 };
 
 } // namespace FileSys
