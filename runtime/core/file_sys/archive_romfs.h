@@ -8,7 +8,7 @@
 
 #include "common/common_types.h"
 
-#include "core/file_sys/archive_backend.h"
+#include "core/file_sys/ivfc_archive.h"
 #include "core/loader/loader.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -17,82 +17,12 @@
 namespace FileSys {
 
 /// File system interface to the RomFS archive
-class Archive_RomFS final : public ArchiveBackend {
+class Archive_RomFS final : public IVFCArchive {
 public:
     Archive_RomFS(const Loader::AppLoader& app_loader);
 
     std::string GetName() const override { return "RomFS"; }
-
-    /**
-     * Open a file specified by its path, using the specified mode
-     * @param path Path relative to the archive
-     * @param mode Mode to open the file with
-     * @return Opened file, or nullptr
-     */
-    std::unique_ptr<FileBackend> OpenFile(const Path& path, const Mode mode) const override;
-
-    /**
-     * Delete a file specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the file could be deleted
-     */
-    bool DeleteFile(const Path& path) const override;
-
-    /**
-     * Rename a File specified by its path
-     * @param src_path Source path relative to the archive
-     * @param dest_path Destination path relative to the archive
-     * @return Whether rename succeeded
-     */
-    bool RenameFile(const Path& src_path, const Path& dest_path) const override;
-
-    /**
-     * Delete a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the directory could be deleted
-     */
-    bool DeleteDirectory(const Path& path) const override;
-
-    /**
-     * Create a file specified by its path
-     * @param path Path relative to the Archive
-     * @param size The size of the new file, filled with zeroes
-     * @return File creation result code
-     */
-    ResultCode CreateFile(const Path& path, u32 size) const override;
-
-    /**
-     * Create a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Whether the directory could be created
-     */
-    bool CreateDirectory(const Path& path) const override;
-
-    /**
-     * Rename a Directory specified by its path
-     * @param src_path Source path relative to the archive
-     * @param dest_path Destination path relative to the archive
-     * @return Whether rename succeeded
-     */
-    bool RenameDirectory(const Path& src_path, const Path& dest_path) const override;
-
-    /**
-     * Open a directory specified by its path
-     * @param path Path relative to the archive
-     * @return Opened directory, or nullptr
-     */
-    std::unique_ptr<DirectoryBackend> OpenDirectory(const Path& path) const override;
-
-    ResultCode Open(const Path& path) override {
-        return RESULT_SUCCESS;
-    }
-
-    ResultCode Format(const Path& path) const override;
-
-private:
-    friend class File_RomFS;
-
-    std::vector<u8> raw_data;
+    ResultCode Open(const Path& path) override { return RESULT_SUCCESS; }
 };
 
 } // namespace FileSys
