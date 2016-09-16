@@ -16,7 +16,7 @@ namespace Core {
 struct ThreadContext;
 }
 
-class ARM_DynCom final : virtual public ARM_Interface {
+class ARM_DynCom final : public ARM_Interface {
 public:
     ARM_DynCom(PrivilegeMode initial_mode);
     ~ARM_DynCom();
@@ -38,7 +38,6 @@ public:
 
     void AddTicks(u64 ticks) override;
 
-    void ResetContext(Core::ThreadContext& context, u32 stack_top, u32 entry_point, u32 arg) override;
     void SaveContext(Core::ThreadContext& ctx) override;
     void LoadContext(const Core::ThreadContext& ctx) override;
 
