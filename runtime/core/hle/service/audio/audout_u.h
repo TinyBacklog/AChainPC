@@ -4,8 +4,11 @@
 
 #pragma once
 
-#include "core/hle/kernel/hle_ipc.h"
 #include "core/hle/service/service.h"
+
+namespace Kernel {
+class HLERequestContext;
+}
 
 namespace Service {
 namespace Audio {
