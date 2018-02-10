@@ -14,13 +14,10 @@ enum class PerformanceMode : u8 {
     Docked = 1,
 };
 
-class APM final : public ServiceFramework<APM> {
+class Module final {
 public:
-    APM();
-    ~APM() = default;
-
-private:
-    void OpenSession(Kernel::HLERequestContext& ctx);
+    Module() = default;
+    ~Module() = default;
 };
 
 /// Registers all AM services with the specified service manager.
