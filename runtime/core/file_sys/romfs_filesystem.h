@@ -29,17 +29,18 @@ public:
 
     std::string GetName() const override;
 
-    ResultVal<std::unique_ptr<StorageBackend>> OpenFile(const Path& path,
-                                                        const Mode& mode) const override;
+    ResultVal<std::unique_ptr<StorageBackend>> OpenFile(const std::string& path,
+                                                        Mode mode) const override;
     ResultCode DeleteFile(const Path& path) const override;
     ResultCode RenameFile(const Path& src_path, const Path& dest_path) const override;
     ResultCode DeleteDirectory(const Path& path) const override;
     ResultCode DeleteDirectoryRecursively(const Path& path) const override;
-    ResultCode CreateFile(const Path& path, u64 size) const override;
+    ResultCode CreateFile(const std::string& path, u64 size) const override;
     ResultCode CreateDirectory(const Path& path) const override;
     ResultCode RenameDirectory(const Path& src_path, const Path& dest_path) const override;
     ResultVal<std::unique_ptr<DirectoryBackend>> OpenDirectory(const Path& path) const override;
     u64 GetFreeSpaceSize() const override;
+    ResultVal<EntryType> GetEntryType(const std::string& path) const override;
 
 protected:
     std::shared_ptr<FileUtil::IOFile> romfs_file;
