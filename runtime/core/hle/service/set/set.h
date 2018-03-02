@@ -11,15 +11,12 @@ namespace Set {
 
 class SET final : public ServiceFramework<SET> {
 public:
-    explicit SET(const char* name);
+    explicit SET();
     ~SET() = default;
 
 private:
     void GetAvailableLanguageCodes(Kernel::HLERequestContext& ctx);
 };
-
-/// Registers all Set services with the specified service manager.
-void InstallInterfaces(SM::ServiceManager& service_manager);
 
 } // namespace Set
 } // namespace Service
