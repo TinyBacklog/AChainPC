@@ -12,7 +12,7 @@ namespace Sockets {
 
 class SFDNSRES final : public ServiceFramework<SFDNSRES> {
 public:
-    SFDNSRES();
+    explicit SFDNSRES();
     ~SFDNSRES() = default;
 
 private:
