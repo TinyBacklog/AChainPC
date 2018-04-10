@@ -4,36 +4,14 @@
 
 #pragma once
 
-#include "core/hle/service/service.h"
+#include "core/hle/service/acc/acc.h"
 
 namespace Service {
 namespace Account {
 
-// TODO: RE this structure
-struct UserData {
-    INSERT_PADDING_BYTES(0x80);
-};
-static_assert(sizeof(UserData) == 0x80, "UserData structure has incorrect size");
-
-// TODO: RE this structure
-struct ProfileBase {
-    INSERT_PADDING_BYTES(0x38);
-};
-static_assert(sizeof(ProfileBase) == 0x38, "ProfileBase structure has incorrect size");
-
-class ACC_U0 final : public ServiceFramework<ACC_U0> {
+class ACC_U0 final : public Module::Interface {
 public:
-    ACC_U0();
-    ~ACC_U0() = default;
-
-private:
-    void GetUserExistence(Kernel::HLERequestContext& ctx);
-    void ListAllUsers(Kernel::HLERequestContext& ctx);
-    void ListOpenUsers(Kernel::HLERequestContext& ctx);
-    void GetLastOpenedUser(Kernel::HLERequestContext& ctx);
-    void GetProfile(Kernel::HLERequestContext& ctx);
-    void InitializeApplicationInfo(Kernel::HLERequestContext& ctx);
-    void GetBaasAccountManagerForApplication(Kernel::HLERequestContext& ctx);
+    explicit ACC_U0(std::shared_ptr<Module> module);
 };
 
 } // namespace Account
