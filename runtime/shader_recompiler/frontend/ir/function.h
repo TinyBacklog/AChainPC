@@ -4,22 +4,14 @@
 
 #pragma once
 
-#include <memory>
-#include <vector>
+#include <boost/container/small_vector.hpp>
 
 #include "shader_recompiler/frontend/ir/basic_block.h"
 
 namespace Shader::IR {
 
 struct Function {
-    struct InplaceDelete {
-        void operator()(IR::Block* block) const noexcept {
-            std::destroy_at(block);
-        }
-    };
-    using UniqueBlock = std::unique_ptr<IR::Block, InplaceDelete>;
-
-    std::vector<UniqueBlock> blocks;
+    boost::container::small_vector<Block*, 16> blocks;
 };
 
 } // namespace Shader::IR
