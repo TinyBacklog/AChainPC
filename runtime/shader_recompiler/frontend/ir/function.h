@@ -12,6 +12,7 @@ namespace Shader::IR {
 
 struct Function {
     BlockList blocks;
+    BlockList post_order_blocks;
 };
 
 } // namespace Shader::IR
