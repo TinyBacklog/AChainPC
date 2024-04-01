@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC0-1.0
 -->
 
 <component type="desktop-application">
-  <id>org.suyu_emu.suyu</id>
+  <id>dev.suyu_emu.suyu</id>
   <metadata_license>CC0-1.0</metadata_license>
   <name>suyu</name>
   <summary>Nintendo Switch emulator</summary>
@@ -34,7 +34,7 @@ SPDX-License-Identifier: CC0-1.0
   <url type="contact">https://community.citra-emu.org/</url>
   <url type="vcs-browser">https://gitlab.com/suyu-emu/suyu</url>
   <url type="contribute">https://suyu-emu.org/wiki/contributing/</url>
-  <launchable type="desktop-id">org.suyu_emu.suyu.desktop</launchable>
+  <launchable type="desktop-id">dev.suyu_emu.suyu.desktop</launchable>
   <provides>
     <binary>suyu</binary>
     <binary>suyu-cmd</binary>
