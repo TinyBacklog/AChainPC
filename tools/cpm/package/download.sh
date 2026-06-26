@@ -33,8 +33,9 @@ done
 [ -n "$packages" ] || usage
 
 for pkg in $packages; do
-	PACKAGE="$pkg"
-	export PACKAGE
+	unset JSON
+	export PACKAGE="$pkg"
+
 	# shellcheck disable=SC1091
 	. "$SCRIPTS"/vars.sh
 
