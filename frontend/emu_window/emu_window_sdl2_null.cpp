@@ -9,7 +9,7 @@
 
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2_null.h"
+#include "frontend/emu_window/emu_window_sdl2_null.h"
 #include "video_core/renderer_null/renderer_null.h"
 
 #include <SDL3/SDL.h>

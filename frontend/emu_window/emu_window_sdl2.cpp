@@ -19,7 +19,7 @@ static constexpr Uint8 SDL_RELEASED = 0;
 #include "input_common/main.h"
 #include "common/param_package.h"
 #include "common/settings_input.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2.h"
+#include "frontend/emu_window/emu_window_sdl2.h"
 #include "suyu_cmd/suyu_icon.h"
 
 #ifdef _WIN32

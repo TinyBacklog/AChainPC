@@ -53,14 +53,14 @@
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
-#include "suyu_cmd/emu_window/emu_window_headless.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2_gl.h"
+#include "frontend/emu_window/emu_window_headless.h"
+#include "frontend/emu_window/emu_window_sdl2.h"
+#include "frontend/emu_window/emu_window_sdl2_gl.h"
 #ifdef __APPLE__
-#include "suyu_cmd/emu_window/emu_window_sdl2_mtl.h"
+#include "frontend/emu_window/emu_window_sdl2_mtl.h"
 #endif
-#include "suyu_cmd/emu_window/emu_window_sdl2_null.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2_vk.h"
+#include "frontend/emu_window/emu_window_sdl2_null.h"
+#include "frontend/emu_window/emu_window_sdl2_vk.h"
 #include "video_core/renderer_base.h"
 
 #ifdef _WIN32

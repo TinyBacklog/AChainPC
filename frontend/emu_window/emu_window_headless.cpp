@@ -5,7 +5,7 @@
 #include "common/scm_rev.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "core/frontend/graphics_context.h"
-#include "suyu_cmd/emu_window/emu_window_headless.h"
+#include "frontend/emu_window/emu_window_headless.h"
 
 EmuWindow_Headless::EmuWindow_Headless() {
     // No real surface exists - the WindowSystemInfo comment on render_surface

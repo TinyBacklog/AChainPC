@@ -12,6 +12,11 @@ function(create_resource file output filename)
     file(WRITE "${PROJECT_BINARY_DIR}/dist/${output}" "const unsigned char ${filename}[] = {${filedata}};\nconst unsigned ${filename}_size = sizeof(${filename});\n")
 endfunction()
 
+if (NOT ASTRALCHAIN_RECOMP_DIR AND SUYU_CMD_RECOMP_DIR)
+    message(WARNING "SUYU_CMD_RECOMP_DIR is deprecated, use ASTRALCHAIN_RECOMP_DIR")
+    set(ASTRALCHAIN_RECOMP_DIR "${SUYU_CMD_RECOMP_DIR}")
+endif()
+
 if (SUYU_CMD OR YUZU_CMD)
     set(SUYU_CMD_SOURCES
         emu_window/emu_window_sdl2.cpp
@@ -31,22 +36,22 @@ if (SUYU_CMD OR YUZU_CMD)
         suyu.rc
     )
 
-    add_executable(suyu-cmd ${SUYU_CMD_SOURCES})
-    set(SUYU_CMD_TARGETS suyu-cmd)
+    add_executable(astralchain ${SUYU_CMD_SOURCES})
+    set(SUYU_CMD_TARGETS astralchain)
 
     # ---------------------------------------------------------------------
     # Per-game statically recompiled variant.
     #
-    # SUYU_CMD_RECOMP_DIR points at one export's exefs/ directory, which holds
+    # ASTRALCHAIN_RECOMP_DIR points at one export's exefs/ directory, which holds
     # a generated recomp_registration.c plus one subdirectory per NSO module
     # with a generated CMakeLists.txt. Each of those contributes a static
     # library (recomp_static_<module>) whose C symbols have been renamed per
     # module, so they can all live in one binary. The result is a single
     # self-contained executable: no recompiled_*.dll to ship beside it.
     #
-    # This is an *additional* target - plain suyu-cmd stays game-agnostic.
+    # This is an *additional* target - plain astralchain stays game-agnostic.
     # ---------------------------------------------------------------------
-    if (SUYU_CMD_RECOMP_DIR AND EXISTS "${SUYU_CMD_RECOMP_DIR}/recomp_registration.c")
+    if (ASTRALCHAIN_RECOMP_DIR AND EXISTS "${ASTRALCHAIN_RECOMP_DIR}/recomp_registration.c")
         enable_language(C)
         # Tells the generated module projects to emit only the static library,
         # skipping their portable standalone exe (whose target name would
@@ -67,17 +72,17 @@ if (SUYU_CMD OR YUZU_CMD)
         # by a later replacement, so "[" goes through a placeholder that
         # contains no bracket characters until every other substitution has
         # already run.
-        set(_recomp_dir_escaped "${SUYU_CMD_RECOMP_DIR}")
+        set(_recomp_dir_escaped "${ASTRALCHAIN_RECOMP_DIR}")
         string(REPLACE "[" "@LBRACKET@" _recomp_dir_escaped "${_recomp_dir_escaped}")
         string(REPLACE "]" "[]]" _recomp_dir_escaped "${_recomp_dir_escaped}")
         string(REPLACE "*" "[*]" _recomp_dir_escaped "${_recomp_dir_escaped}")
         string(REPLACE "?" "[?]" _recomp_dir_escaped "${_recomp_dir_escaped}")
         string(REPLACE "@LBRACKET@" "[[]" _recomp_dir_escaped "${_recomp_dir_escaped}")
-        file(GLOB _recomp_children RELATIVE "${SUYU_CMD_RECOMP_DIR}"
+        file(GLOB _recomp_children RELATIVE "${ASTRALCHAIN_RECOMP_DIR}"
              "${_recomp_dir_escaped}/*")
         foreach(_m ${_recomp_children})
-            if (EXISTS "${SUYU_CMD_RECOMP_DIR}/${_m}/CMakeLists.txt" AND
-                EXISTS "${SUYU_CMD_RECOMP_DIR}/${_m}/recomp_export.c")
+            if (EXISTS "${ASTRALCHAIN_RECOMP_DIR}/${_m}/CMakeLists.txt" AND
+                EXISTS "${ASTRALCHAIN_RECOMP_DIR}/${_m}/recomp_export.c")
                 # Each generated module carries its own frozen copy of the
                 # GuestContext layout. A cache produced before TPIDRRO_EL0 was
                 # split out of TPIDR_EL0 still folds the two registers into one
@@ -85,16 +90,16 @@ if (SUYU_CMD OR YUZU_CMD)
                 # header outside the TLS region the kernel parses it from).
                 # Refuse to build against such a cache instead of shipping a
                 # binary that black-screens.
-                if (EXISTS "${SUYU_CMD_RECOMP_DIR}/${_m}/recomp_runtime.h")
-                    file(READ "${SUYU_CMD_RECOMP_DIR}/${_m}/recomp_runtime.h" _rt_h)
+                if (EXISTS "${ASTRALCHAIN_RECOMP_DIR}/${_m}/recomp_runtime.h")
+                    file(READ "${ASTRALCHAIN_RECOMP_DIR}/${_m}/recomp_runtime.h" _rt_h)
                     if (NOT _rt_h MATCHES "tpidrro_el0")
                         message(FATAL_ERROR
-                            "Recompiled module '${_m}' in ${SUYU_CMD_RECOMP_DIR} predates the "
+                            "Recompiled module '${_m}' in ${ASTRALCHAIN_RECOMP_DIR} predates the "
                             "TPIDRRO_EL0/TPIDR_EL0 split and would mis-handle IPC. "
                             "Re-export the game to regenerate its AOT cache.")
                     endif()
                 endif()
-                set(_identity_path "${SUYU_CMD_RECOMP_DIR}/${_m}/recomp_identity.json")
+                set(_identity_path "${ASTRALCHAIN_RECOMP_DIR}/${_m}/recomp_identity.json")
                 if (NOT EXISTS "${_identity_path}")
                     message(FATAL_ERROR "Module ${_m} lacks identity metadata. Re-export with the current recompiler.")
                 endif()
@@ -109,7 +114,7 @@ if (SUYU_CMD OR YUZU_CMD)
                 set(_segment_index 0)
                 foreach(_segment text rodata data)
                     string(JSON _hash GET "${_identity}" sha256 ${_segment_index})
-                    set(_segment_path "${SUYU_CMD_RECOMP_DIR}/${_m}/data/${_segment}.bin")
+                    set(_segment_path "${ASTRALCHAIN_RECOMP_DIR}/${_m}/data/${_segment}.bin")
                     if (EXISTS "${_segment_path}")
                         file(SHA256 "${_segment_path}" _actual_hash)
                         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_segment_path}")
@@ -123,7 +128,7 @@ if (SUYU_CMD OR YUZU_CMD)
                     math(EXPR _segment_index "${_segment_index} + 1")
                 endforeach()
                 string(APPEND _recomp_identities "}}},\n")
-                add_subdirectory("${SUYU_CMD_RECOMP_DIR}/${_m}"
+                add_subdirectory("${ASTRALCHAIN_RECOMP_DIR}/${_m}"
                                  "${CMAKE_CURRENT_BINARY_DIR}/recomp/${_m}")
                 list(APPEND _recomp_libs "recomp_static_${_m}")
             endif()
@@ -131,20 +136,21 @@ if (SUYU_CMD OR YUZU_CMD)
         if (_recomp_libs)
             string(APPEND _recomp_identities "};\nstatic_assert(Core::RecompAbiVersion == 3);\n")
             file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/recomp_identities.h" CONTENT "${_recomp_identities}")
-            add_executable(suyu-cmd-static ${SUYU_CMD_SOURCES}
-                           "${SUYU_CMD_RECOMP_DIR}/recomp_registration.c")
-            target_compile_definitions(suyu-cmd-static PRIVATE SUYU_CMD_STATIC_RECOMP=1)
-            target_include_directories(suyu-cmd-static PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-            target_link_libraries(suyu-cmd-static PRIVATE ${_recomp_libs})
-            list(APPEND SUYU_CMD_TARGETS suyu-cmd-static)
+            add_executable(astralchain-static ${SUYU_CMD_SOURCES}
+                           "${ASTRALCHAIN_RECOMP_DIR}/recomp_registration.c")
+            target_compile_definitions(astralchain-static PRIVATE SUYU_CMD_STATIC_RECOMP=1)
+            target_include_directories(astralchain-static PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+            target_link_libraries(astralchain-static PRIVATE ${_recomp_libs})
+            list(APPEND SUYU_CMD_TARGETS astralchain-static)
         else()
-            message(WARNING "SUYU_CMD_RECOMP_DIR set but no recompiled modules found in it")
+            message(WARNING "ASTRALCHAIN_RECOMP_DIR set but no recompiled modules found in it")
         endif()
     endif()
 
     create_resource("${PROJECT_SOURCE_DIR}/dist/suyu.bmp" "suyu_cmd/suyu_icon.h" "suyu_icon")
 
     foreach(_t ${SUYU_CMD_TARGETS})
+        target_include_directories(${_t} PRIVATE ${PROJECT_SOURCE_DIR})
         if (APPLE)
             target_sources(${_t} PRIVATE
                 emu_window/emu_window_sdl2_mtl.cpp
@@ -161,7 +167,7 @@ if (SUYU_CMD OR YUZU_CMD)
 
         target_include_directories(${_t} PRIVATE ${RESOURCES_DIR})
 
-        target_link_libraries(${_t} PRIVATE SDL3::SDL3 Vulkan::Headers VulkanMemoryAllocator)
+        target_link_libraries(${_t} PRIVATE SDL3::SDL3 Vulkan::Headers GPUOpen::VulkanMemoryAllocator)
         # FFmpeg headers are not transitively exposed by core; add them explicitly
         target_include_directories(${_t} PRIVATE ${FFmpeg_INCLUDE_DIR})
 
@@ -178,7 +184,7 @@ if (SUYU_CMD OR YUZU_CMD)
             elseif(MINGW)
                 set_target_properties(${_t} PROPERTIES LINK_FLAGS_RELEASE "-Wl,--subsystem,windows")
             endif()
-            target_link_libraries(${_t} PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)  # Fixed typo: yuzu-cmd -> suyu-cmd
+            target_link_libraries(${_t} PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)  # Fixed typo: yuzu-cmd -> astralchain
         endif()
 
         if (MSVC AND SUYU_USE_BUNDLED_SDL3)
@@ -194,6 +200,6 @@ if (SUYU_CMD OR YUZU_CMD)
     endforeach()
 
     if(UNIX AND NOT APPLE)
-        install(TARGETS suyu-cmd)
+        install(TARGETS astralchain)
     endif()
 endif()

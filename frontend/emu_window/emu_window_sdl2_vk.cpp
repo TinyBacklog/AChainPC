@@ -16,7 +16,7 @@
 
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
-#include "suyu_cmd/emu_window/emu_window_sdl2_vk.h"
+#include "frontend/emu_window/emu_window_sdl2_vk.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 
 #include <SDL3/SDL.h>
