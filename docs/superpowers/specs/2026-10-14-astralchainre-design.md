@@ -73,12 +73,13 @@ Referências externas:
 
 ```
 AstralChainRe/
-├── CMakeLists.txt
-├── LICENSE                     GPL-2.0-or-later
-├── runtime/                    vendoring do suyu (filter-repo, com histórico)
+├── CMakeLists.txt              raiz do CMake (vinda do suyu)
+├── CMakeModules/ cpmfile.json  infraestrutura de build do suyu
+├── externals/                  externals mantidos
+├── LICENSE.txt                 GPL-2.0-or-later
+├── runtime/                    antigo src/ do suyu (filter-repo, com histórico)
 │   ├── common/ core/ video_core/ audio_core/ hid_core/ input_common/
-│   ├── shader_recompiler/ network/ [frontend_common/]
-│   └── externals/              dynarmic (vendored) + externals mantidos
+│   └── shader_recompiler/ network/ nintendo_library/ frontend_common/ dynarmic/
 ├── recompiler/                 arm64_to_c.h + export_module
 ├── game/                       específico do Astral Chain
 │   ├── version.h               hashes dos segmentos da 1.0.1 (rtld/main/sdk)
@@ -91,6 +92,11 @@ AstralChainRe/
 ├── docs/
 └── work/                       no .gitignore: exports, builds, logs
 ```
+
+A raiz do CMake, `CMakeModules/`, `cpmfile.json` e `externals/` ficam na raiz do
+repositório, e não dentro de `runtime/`, porque o CMake do suyu depende de
+`CMAKE_SOURCE_DIR` (cache do CPM, `externals/`, `cpmfile.json`). O dynarmic ativo é
+`runtime/dynarmic`. O submódulo `externals/dynarmic` não era usado e saiu.
 
 Limites entre módulos:
 
