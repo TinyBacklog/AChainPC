@@ -9,6 +9,34 @@ static std::vector<uint8_t> Read(const std::string& path) {
     if (!file) throw std::runtime_error("Cannot read " + path);
     return {std::istreambuf_iterator<char>{file}, {}};
 }
+static std::vector<suyu::recomp::Patch> ReadPatches(const std::string& path, uint64_t base) {
+    std::ifstream file(path);
+    if (!file) throw std::runtime_error("Cannot read patches " + path);
+    std::vector<suyu::recomp::Patch> patches;
+    std::string line;
+    while (std::getline(file, line)) {
+        line = line.substr(0, line.find('#'));
+        std::istringstream fields(line);
+        std::string offset, kind, expected, arg;
+        if (!(fields >> offset)) continue;
+        if (!(fields >> kind >> expected >> arg)) throw std::runtime_error("Bad patch line: " + line);
+        suyu::recomp::Patch patch{};
+        patch.pc = base + std::stoull(offset, nullptr, 16);
+        patch.expected = static_cast<uint32_t>(std::stoul(expected, nullptr, 16));
+        if (kind == "word") {
+            patch.kind = suyu::recomp::Patch::Kind::Word;
+            patch.replacement = static_cast<uint32_t>(std::stoul(arg, nullptr, 16));
+        } else if (kind == "hook") {
+            patch.kind = suyu::recomp::Patch::Kind::Hook;
+            patch.hook = arg;
+        } else {
+            throw std::runtime_error("Unknown patch kind: " + kind);
+        }
+        patches.push_back(patch);
+    }
+    return patches;
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string_view{argv[1]} == "--runtime-only") {
         // Only for caches with the current ABI; does not regenerate block bodies.
@@ -31,8 +59,10 @@ int main(int argc, char** argv) {
         return update("recomp_runtime.h", suyu::recomp::RuntimeH()) &&
                update("recomp_runtime.c", suyu::recomp::RuntimeC()) ? 0 : 1;
     }
-    if (argc != 8) {
-        std::cerr << "Usage: export_module NAME SEGMENT_DIR OUTPUT TEXT_BASE ENTRY ROOTS TITLE\n";
+    if (argc != 8 && argc != 9) {
+        std::cerr << "Usage: export_module NAME SEGMENT_DIR OUTPUT TEXT_BASE ENTRY ROOTS TITLE [PATCHES]\n"
+                     "PATCHES: one per line, 'OFFSET word EXPECTED REPLACEMENT' or\n"
+                     "         'OFFSET hook EXPECTED FUNCTION' (numbers in hex)\n";
         return 1;
     }
     try {
@@ -44,10 +74,12 @@ int main(int argc, char** argv) {
         std::vector<uint64_t> roots;
         uint64_t root;
         while (roots_file >> std::hex >> root) roots.push_back(root);
+        std::vector<suyu::recomp::Patch> patches;
+        if (argc == 9) patches = ReadPatches(argv[8], std::stoull(argv[4], nullptr, 0));
         const auto stats = suyu::recomp::EmitProject(argv[1], text.data(), text.size(),
             std::stoull(argv[4], nullptr, 0), argv[3], false,
             rodata.data(), rodata.size(), data.data(), data.size(),
-            std::stoull(argv[5], nullptr, 0), argv[7], &roots);
+            std::stoull(argv[5], nullptr, 0), argv[7], &roots, &patches);
         (void)stats;
         return 0;
     } catch (const std::exception& error) {

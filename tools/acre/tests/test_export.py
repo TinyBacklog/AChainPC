@@ -64,3 +64,36 @@ class ExportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PatchFilesTest(unittest.TestCase):
+    def test_split_by_module_and_strip_comments(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "fps60.patches").write_text(
+            "# 60fps\n"
+            "main 0x9E8D84 word 0x1A9F0501 0x52800021 ; mov w1,#1\n"
+            "main 0x91DC10 hook 0x34000495 acre_fps60_step\n"
+            "sdk 0x26EA0 word 0x1A88C128 0x52800028\n")
+        split = export.read_patches(d)
+        self.assertEqual(split["main"], ["9e8d84 word 1a9f0501 52800021", "91dc10 hook 34000495 acre_fps60_step"])
+        self.assertEqual(split["sdk"], ["26ea0 word 1a88c128 52800028"])
+
+    def test_bad_line_exits(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "x.patches").write_text("main 0x10 word 0x1\n")
+        with self.assertRaises(SystemExit) as e:
+            export.read_patches(d)
+        self.assertEqual(e.exception.code, config.EXIT_EXPORT_FAILED)
+
+    def test_branch_replacement_targets_become_roots(self):
+        # cbz w8, +0x30 at 0x57E7E0 -> 0x57E810, and the fall-through 0x57E7E4
+        roots = export.patch_roots(["57e7e0 word 1e790008 34000188"])
+        self.assertEqual(roots, {0x57E810, 0x57E7E4})
+        self.assertEqual(export.patch_roots(["9e8d84 word 1a9f0501 52800021"]), set())
+
+    def test_hash_changes_with_patches(self):
+        w = fixture()
+        patches = Path(tempfile.mkdtemp())
+        before = export.input_hash(w.inputs, w.roots_dir, w.lifter_files, patches)
+        (patches / "fps60.patches").write_text("main 0x10 word 0x1 0x2\n")
+        self.assertNotEqual(before, export.input_hash(w.inputs, w.roots_dir, w.lifter_files, patches))

@@ -17,11 +17,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_map>
 #include <unordered_set>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,6 +60,20 @@ struct Block {
     u32 size;
     u32 count;
     bool is_entry;
+};
+
+// A game patch applied while lifting. The emitted code picks the original or the
+// patched behaviour at run time from `acre_fps60`, so one export serves both
+// settings. Word: the instruction at `pc` is replaced by `replacement`. Hook: the
+// C function `hook(GuestContext*)` runs first; returning 1 means it has set the
+// PC and the block ends there, 0 means the original instruction runs as usual.
+struct Patch {
+    enum class Kind { Word, Hook };
+    u64 pc;
+    u32 expected;
+    Kind kind;
+    u32 replacement;
+    std::string hook;
 };
 
 inline bool IsTerminator(u32 i) {
@@ -3704,6 +3720,33 @@ inline bool Translate(u32 i, u64 pc, std::string& out) {
     put(buf); return true;
 }
 
+// Translate() with an optional patch at this instruction. `open` follows
+// Translate's return value: false only when every path through the emitted code
+// ends the block.
+inline void TranslatePatched(u32 word, u64 pc, const Patch* patch, std::string& out, bool& open) {
+    if (!patch) {
+        open = Translate(word, pc, out);
+        return;
+    }
+    if (word != patch->expected) {
+        char message[128];
+        snprintf(message, sizeof message, "patch at 0x%llx expects 0x%08x, found 0x%08x",
+                 (unsigned long long)pc, patch->expected, word);
+        throw std::runtime_error(message);
+    }
+    if (patch->kind == Patch::Kind::Hook) {
+        out += "    { extern int " + patch->hook + "(GuestContext*);\n"
+               "      if (acre_fps60 && " + patch->hook + "(c)) return; }\n";
+        open = Translate(word, pc, out);
+        return;
+    }
+    std::string replaced, original;
+    const bool open_replaced = Translate(patch->replacement, pc, replaced);
+    const bool open_original = Translate(word, pc, original);
+    out += "    if (acre_fps60) {\n" + replaced + "    } else {\n" + original + "    }\n";
+    open = open_replaced || open_original;
+}
+
 inline std::string FuncName(const std::string& mod, u64 v) {
     char b[64]; snprintf(b, sizeof b, "blk_%s_%016llx", mod.c_str(), (unsigned long long)v); return b;
 }
@@ -3833,10 +3876,22 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
                                   // Addresses of this module's exported dynsym symbols, so
                                   // block discovery seeds a root at each even when nothing in
                                   // this module's own .text branches there directly.
-                                  const std::vector<u64>* extra_roots = nullptr) {
+                                  const std::vector<u64>* extra_roots = nullptr,
+                                  // Game patches, each applied when lifting the instruction
+                                  // at its pc (see TranslatePatched).
+                                  const std::vector<Patch>* patches = nullptr) {
     RecompileStats stats;
     auto blocks = DiscoverBlocks(text, n_bytes, base, entry_pc, extra_roots);
     const u32* p = reinterpret_cast<const u32*>(text);
+    std::unordered_map<u64, const Patch*> patch_at;
+    if (patches) {
+        for (const auto& patch : *patches) {
+            if (patch.pc < base || patch.pc - base >= n_bytes) {
+                throw std::runtime_error("patch outside .text");
+            }
+            patch_at.emplace(patch.pc, &patch);
+        }
+    }
     stats.blocks = blocks.size();
     stats.instructions = n_bytes / 4;
 
@@ -3961,7 +4016,10 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
         std::string block_body;
         for (u32 k = 0; k < b.count; ++k) {
             body.clear();
-            open = Translate(p[first + k], b.vaddr + (u64)k * 4, body);
+            const u64 pc = b.vaddr + (u64)k * 4;
+            const auto patched = patch_at.find(pc);
+            TranslatePatched(p[first + k], pc, patched == patch_at.end() ? nullptr : patched->second,
+                             body, open);
             block_body += body;
             if (!open) { ++stats.translated_terminators; break; }
         }
@@ -4478,6 +4536,9 @@ typedef struct GuestContext {
     /* Open file handles for save data (simplified) */
     void* save_handles[16]; int save_handle_count;
 } GuestContext;
+/* Game patches choose their behaviour at run time from this flag (60fps on/off);
+   the host executable defines it. */
+extern volatile int acre_fps60;
 
 /* Core::ArmRecomp mirrors the prefix of this struct with its own declaration
    so the emulator can read and write guest state without including this
