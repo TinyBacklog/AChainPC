@@ -8,10 +8,12 @@ from . import config
 def merge(report: dict, roots_dir: Path, expected: dict[str, list[str]]) -> int:
     """Adds the report's fallback offsets to roots_dir/<module>.roots; returns how many were new."""
     reported = {m["name"]: m["sha256"] for m in report.get("modules", [])}
-    for name, hashes in reported.items():
-        if name in expected and hashes != expected[name]:
+    checked = set(reported) | {site["module"] for site in report.get("fallback_sites", [])}
+    for name in checked & set(expected):
+        if reported.get(name) != expected[name]:
             config.fail(config.EXIT_WRONG_VERSION,
-                        f"report module {name} is not the supported version; refusing its offsets")
+                        f"report module {name} is not the supported version (or has no hashes); "
+                        "refusing its offsets")
     added = 0
     by_module: dict[str, set[int]] = {}
     for site in report.get("fallback_sites", []):
@@ -30,8 +32,10 @@ def merge(report: dict, roots_dir: Path, expected: dict[str, list[str]]) -> int:
         added += len(offsets - values)
         values |= offsets
         roots_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(c + "\n" for c in comments) +
-                        "".join(f"{v:x}\n" for v in sorted(values)))
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(c + "\n" for c in comments) +
+                       "".join(f"{v:x}\n" for v in sorted(values)))
+        tmp.replace(path)
     return added
 
 

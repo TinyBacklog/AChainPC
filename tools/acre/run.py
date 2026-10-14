@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import config
 from . import profile as profiles
-from .build import BINARY
+from .build import BINARY, BUILD_DIR
 
 
 @dataclass
@@ -30,6 +30,20 @@ def verdict(report: dict, returncode: int = 0) -> Verdict:
 def require_binary(binary: Path) -> None:
     if not binary.is_file():
         config.fail(config.EXIT_NO_BUILD, f"{binary} not built; run `acre.py build` first")
+
+
+def ensure_current(build_dir: Path = BUILD_DIR) -> None:
+    """Incremental rebuild before running, so a changed export or frontend is never
+    played with a stale binary. A no-op build takes a few seconds."""
+    if not (build_dir / "CMakeCache.txt").is_file():
+        return  # never built: require_binary reports it
+    log = config.WORK / "logs" / "build-incremental.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("w") as out:
+        result = subprocess.run(["cmake", "--build", str(build_dir), "--target", "astralchain-static"],
+                                stdout=out, stderr=subprocess.STDOUT)
+    if result.returncode != 0:
+        config.fail(config.EXIT_BUILD_FAILED, f"incremental build failed; see {log}")
 
 
 def check_seconds(seconds: int) -> None:
@@ -64,6 +78,7 @@ def validate(command: list[str], report_path: Path, log: Path, seconds: int, mar
 def run(validate_run: bool = False, seconds: int = 180, extra: list[str] | None = None,
         work: Path = config.WORK) -> None:
     record = config.load(work)
+    ensure_current()
     require_binary(BINARY)
     play_profile, ini = profiles.prepare(record, work)
     command = [str(BINARY), f"--user-dir={play_profile}", f"--keys-dir={record['keys_dir']}",

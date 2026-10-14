@@ -53,3 +53,34 @@ class RequirementsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunBuildsFirstTest(unittest.TestCase):
+    def test_incremental_build_runs_before_play(self):
+        from unittest import mock
+        build_dir = Path(tempfile.mkdtemp())
+        (build_dir / "CMakeCache.txt").write_text("")
+        with mock.patch("subprocess.run") as fake:
+            fake.return_value.returncode = 0
+            run.ensure_current(build_dir)
+        command = fake.call_args.args[0]
+        self.assertEqual(command[:3], ["cmake", "--build", str(build_dir)])
+        self.assertIn("astralchain-static", command)
+
+    def test_failed_incremental_build_stops(self):
+        from unittest import mock
+        build_dir = Path(tempfile.mkdtemp())
+        (build_dir / "CMakeCache.txt").write_text("")
+        with mock.patch("subprocess.run") as fake:
+            fake.return_value.returncode = 1
+            with self.assertRaises(SystemExit) as e:
+                run.ensure_current(build_dir)
+        self.assertEqual(e.exception.code, config.EXIT_BUILD_FAILED)
+
+
+class StrictCoverageTest(unittest.TestCase):
+    def test_offsets_for_module_without_hashes_refused(self):
+        report = {"modules": [], "fallback_sites": [{"module": "main", "offset": 0x10}]}
+        with self.assertRaises(SystemExit) as e:
+            coverage.merge(report, Path(tempfile.mkdtemp()), {"main": MAIN})
+        self.assertEqual(e.exception.code, config.EXIT_WRONG_VERSION)
