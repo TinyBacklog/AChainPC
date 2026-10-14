@@ -16,6 +16,7 @@
 #include "common/settings.h"
 #include "common/swap.h"
 #include "core/core.h"
+#include "core/arm/recomp/recomp_identity.h"
 #include "core/file_sys/patch_manager.h"
 #include "core/hle/kernel/code_set.h"
 #include "core/hle/kernel/k_page_table.h"
@@ -206,6 +207,17 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
 #endif
         return load_base + image_size;
     }
+
+    std::array<std::span<const u8>, 3> identity_segments;
+    std::array<u64, 3> identity_offsets;
+    for (std::size_t i = 0; i < identity_segments.size(); ++i) {
+        const auto& segment = nso_header.segments[i];
+        identity_segments[i] = std::span<const u8>{codeset.memory}.subspan(
+            module_start + segment.location, segment.size);
+        identity_offsets[i] = segment.location;
+    }
+    if (!Core::ValidateRecompModule(nso_file.GetName(), identity_segments, load_base,
+                                   identity_offsets)) return std::nullopt;
 
     // Apply cheats if they exist and the program has a valid title ID
     if (pm) {

@@ -18,6 +18,9 @@ class System;
 /// registered — the running process is a standalone game export, so window
 /// chrome (title/icon) should read as the game, not the suyu dev frontend.
 extern bool g_native_export_mode;
+// Set by --show-fps: put the frame rate back in the title bar even for a native
+// export, and log it so a run can be read back from its log afterwards.
+extern bool g_show_fps;
 
 namespace InputCommon {
 class InputSubsystem;

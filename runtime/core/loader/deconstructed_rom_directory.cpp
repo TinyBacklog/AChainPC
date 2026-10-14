@@ -71,9 +71,10 @@ struct PatchCollection {
     std::array<s32, 13> module_patcher_indices{};
 };
 
-AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(FileSys::VirtualFile file_, bool override_update_)
+AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(FileSys::VirtualFile file_, bool override_update_, bool register_process_)
     : AppLoader(std::move(file_))
     , override_update(override_update_)
+    , register_process(register_process_)
 {
     const auto file_dir = file->GetContainingDirectory();
 
@@ -125,10 +126,11 @@ AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(FileSys
 }
 
 AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(
-    FileSys::VirtualDir directory, bool override_update_)
+    FileSys::VirtualDir directory, bool override_update_, bool register_process_)
     : AppLoader(directory->GetFile("main"))
     , dir(std::move(directory))
     , override_update(override_update_)
+    , register_process(register_process_)
 {}
 
 FileType AppLoader_DeconstructedRomDirectory::IdentifyType(const FileSys::VirtualFile& dir_file) {
@@ -266,29 +268,18 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
         LOG_DEBUG(Loader, "loaded module {} @ {:#X}", module, load_addr);
     }
 
-    // AppLoader_NCA/NSP/NRO all register a RomFSFactory for their process here;
-    // this loader never did, so FileSystemController::OpenProcess() found no
-    // registration for a deconstructed-rom-directory process (every native
-    // static-recomp export, plus any real homebrew shipped this way) and left
-    // its output romfs_controller untouched - a null shared_ptr the FSP_SRV
-    // caller then called through unconditionally, segfaulting the instant a
-    // title's very first OpenDataStorageByCurrentProcess request came in.
-    // Registering unconditionally (matching NRO) fixes that regardless of
-    // whether romfs.bin is actually present: ReadRomFS below already returns
-    // ErrorNoRomFS cleanly when `romfs` is still null, so a title with no
-    // bundled RomFS gets a real (if empty) answer instead of a crash.
-    if (dir != nullptr) {
-        romfs = dir->GetFile("romfs.bin");
-        if (romfs == nullptr) {
-            romfs = dir->GetFile("romfs");
-        }
+    romfs = dir->GetFile("romfs.bin");
+    if (!romfs) {
+        romfs = dir->GetFile("romfs");
     }
-    LOG_DEBUG(Loader, "registering romfs factory for pid={} title={:016X} romfs_present={}",
-              process.GetProcessId(), metadata.GetTitleID(), romfs != nullptr);
-    system.GetFileSystemController().RegisterProcess(
-        process.GetProcessId(), metadata.GetTitleID(),
-        std::make_unique<FileSys::RomFSFactory>(*this, system.GetContentProvider(),
-                                                system.GetFileSystemController()));
+    if (register_process) {
+        LOG_DEBUG(Loader, "Registering directory RomFS for pid={}, present={}",
+                  process.GetProcessId(), romfs != nullptr);
+        system.GetFileSystemController().RegisterProcess(
+            process.GetProcessId(), metadata.GetTitleID(),
+            std::make_unique<FileSys::RomFSFactory>(*this, system.GetContentProvider(),
+                                                   system.GetFileSystemController()));
+    }
 
     is_loaded = true;
     return {ResultStatus::Success,

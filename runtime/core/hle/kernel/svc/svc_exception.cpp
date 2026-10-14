@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "core/core.h"
+#include "core/arm/recomp/recomp_diagnostics.h"
 #include "core/debugger/debugger.h"
 #include "core/hle/kernel/k_process.h"
 #include "core/hle/kernel/k_thread.h"
@@ -51,11 +52,13 @@ void Break(Core::System& system, BreakReason reason, u64 info1, u64 info2) {
     };
     switch (break_reason) {
     case BreakReason::Panic:
+        if (!notification_only) Core::RecompGuestPanic();
         LOG_CRITICAL(Debug_Emulated, "Userspace PANIC! info1=0x{:016X}, info2=0x{:016X}", info1,
                      info2);
         handle_debug_buffer(info1, info2);
         break;
     case BreakReason::Assert:
+        if (!notification_only) Core::RecompGuestPanic();
         LOG_CRITICAL(Debug_Emulated, "Userspace Assertion failed! info1=0x{:016X}, info2=0x{:016X}",
                      info1, info2);
         handle_debug_buffer(info1, info2);

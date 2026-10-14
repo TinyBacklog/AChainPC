@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <charconv>
+#include <csignal>
 #include <exception>
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -25,7 +29,14 @@
 #include "common/settings.h"
 #include "common/string_util.h"
 #include "core/arm/recomp/arm_recomp.h"
+#include "core/arm/recomp/recomp_diagnostics.h"
+#include "core/arm/recomp/recomp_identity.h"
+#ifdef SUYU_CMD_STATIC_RECOMP
+#include "recomp_identities.h"
+#endif
 #include "core/core.h"
+#include "hid_core/hid_core.h"
+#include "hid_core/hid_types.h"
 #include "core/core_timing.h"
 #include "core/cpu_manager.h"
 #include "core/crypto/key_manager.h"
@@ -37,10 +48,12 @@
 #include "core/hle/service/am/service/library_applet_creator.h"
 #include "core/hle/service/filesystem/filesystem.h"
 #include "core/loader/loader.h"
+#include "core/perf_stats.h"
 #include "frontend_common/config.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
+#include "suyu_cmd/emu_window/emu_window_headless.h"
 #include "suyu_cmd/emu_window/emu_window_sdl2.h"
 #include "suyu_cmd/emu_window/emu_window_sdl2_gl.h"
 #ifdef __APPLE__
@@ -104,6 +117,18 @@ static void PrintHelp(const char* argv0) {
                  "-f, --fullscreen      Start in fullscreen mode\n"
                  "-g, --game            File path of the game to load\n"
                  "-h, --help            Display this help and exit\n"
+                 "-H, --headless        Run with no window and no GPU rendering (forces the\n"
+                 "                      Null renderer backend) - for diagnostics only, this\n"
+                 "                      never produces any visual output. Progress/crashes\n"
+                 "                      are only visible in the log.\n"
+                 "    --headless-timeout=N  With --headless, exit after N seconds if the game\n"
+                 "                      hasn't already requested shutdown (0 = run until\n"
+                 "                      Ctrl+C or the game exits; this is the default)\n"
+                 "    -F, --show-fps    Show the frame rate in the title bar and log it\n"
+                 "    --user-dir=PATH   Isolated config, NAND, saves and logs (keys stay external)\n"
+                 "    --dump-recomp-inputs=PATH  Dump effective NSO segments and exit before execution\n"
+                 "    --recomp-strict   Stop with an error instead of falling back to JIT\n"
+                 "    --recomp-stats=PATH  Write periodic and final execution reports as JSON\n"
                  "-m, --multiplayer=nick:password@address:port"
                  " Nickname, password, address and port for multiplayer\n"
                  "-p, --program         Pass following string as arguments to executable\n"
@@ -221,6 +246,17 @@ static void OnStatusMessageReceived(const Network::StatusMessageEntry& msg) {
 /// True once native recompiled CPU modules are registered — the running
 /// process is a standalone game export, not the suyu dev frontend.
 bool g_native_export_mode = false;
+// A native export shows the game's own name in the title bar and nothing else,
+// which leaves no way to read the frame rate. This puts it back on demand.
+bool g_show_fps = false;
+
+/// Set by the SIGINT handler below; polled by the --headless run loop, which
+/// has no window/event queue of its own to notice a Ctrl+C through.
+static volatile std::sig_atomic_t g_headless_interrupted = 0;
+
+static void HeadlessSignalHandler(int /*signal*/) {
+    g_headless_interrupted = 1;
+}
 
 /// Application entry point
 int main(int argc, char** argv) {
@@ -233,59 +269,74 @@ int main(int argc, char** argv) {
 
     try {
 
-    // ── Portable user data for standalone game exports ──────────────────────
-    // An exported game is a self-contained folder the user can move or delete
-    // as a unit, so its config/saves/NAND/logs/screenshots live in <exe>/user
-    // rather than %APPDATA%\suyu. KeysDir must be explicitly pinned at
-    // %APPDATA%\suyu\keys (not left to derive on its own): the presence of a
-    // sibling "user" folder next to the exe makes the FS layer's own
-    // portable-mode auto-detection kick in first and silently rederive
-    // KeysDir under <exe>/user/keys instead, so prod.keys/title.keys are
-    // never bundled with a distributed export.
-    // Must run before Log::Initialize(), which opens a file under LogDir.
+    // Resolve an explicit profile before logging, config or filesystem initialization.
+    std::optional<std::filesystem::path> user_root;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg{argv[i]};
+        if (arg == "--") break;
+        if (arg == "--user-dir") {
+            if (++i == argc || std::string_view{argv[i]}.empty()) {
+                std::cerr << "--user-dir requires a non-empty path\n";
+                return 1;
+            }
+            user_root = std::filesystem::absolute(argv[i]);
+        } else if (arg.starts_with("--user-dir=")) {
+            if (arg.size() == 11) {
+                std::cerr << "--user-dir requires a non-empty path\n";
+                return 1;
+            }
+            user_root = std::filesystem::absolute(std::string{arg.substr(11)});
+        }
+    }
 #ifdef SUYU_CMD_STATIC_RECOMP
-    {
-        namespace FS = Common::FS;
+    if (!user_root) {
 #ifdef _WIN32
         wchar_t exe_w[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_w, MAX_PATH);
-        const std::filesystem::path user_root =
-            std::filesystem::path(exe_w).parent_path() / L"user";
+        user_root = std::filesystem::path(exe_w).parent_path() / "user";
+#elif defined(__linux__)
+        user_root = std::filesystem::canonical("/proc/self/exe").parent_path() / "user";
 #else
-        const std::filesystem::path user_root =
-            std::filesystem::path(argv[0]).parent_path() / "user";
+        user_root = std::filesystem::absolute(argv[0]).parent_path() / "user";
 #endif
-        std::filesystem::create_directories(user_root);
-        // SetSuyuPath (path_util.cpp) fails with "is not a directory" if the
-        // path doesn't exist yet - most of these get created lazily by
-        // whatever subsystem first writes into them, but LoadDir/TASDir are
-        // read from (mod scan, TAS script lookup) before anything writes to
-        // them, so create every subdir up front instead of relying on that.
-        for (const char* sub : {"config", "cache", "cache/shader", "log", "nand", "sdmc", "dump",
-                                 "load", "screenshots", "play_time", "crash_dumps", "amiibo", "tas",
-                                 "icons", "themes"}) {
-            std::filesystem::create_directories(user_root / sub);
-        }
-        FS::SetSuyuPath(FS::SuyuPath::EdenDir, user_root);
-        FS::SetSuyuPath(FS::SuyuPath::ConfigDir, user_root / "config");
-        FS::SetSuyuPath(FS::SuyuPath::CacheDir, user_root / "cache");
-        FS::SetSuyuPath(FS::SuyuPath::ShaderDir, user_root / "cache" / "shader");
-        FS::SetSuyuPath(FS::SuyuPath::LogDir, user_root / "log");
-        FS::SetSuyuPath(FS::SuyuPath::NANDDir, user_root / "nand");
-        FS::SetSuyuPath(FS::SuyuPath::SaveDir, user_root / "nand");
-        FS::SetSuyuPath(FS::SuyuPath::SDMCDir, user_root / "sdmc");
-        FS::SetSuyuPath(FS::SuyuPath::DumpDir, user_root / "dump");
-        FS::SetSuyuPath(FS::SuyuPath::LoadDir, user_root / "load");
-        FS::SetSuyuPath(FS::SuyuPath::ScreenshotsDir, user_root / "screenshots");
-        FS::SetSuyuPath(FS::SuyuPath::PlayTimeDir, user_root / "play_time");
-        FS::SetSuyuPath(FS::SuyuPath::CrashDumpsDir, user_root / "crash_dumps");
-        FS::SetSuyuPath(FS::SuyuPath::AmiiboDir, user_root / "amiibo");
-        FS::SetSuyuPath(FS::SuyuPath::TASDir, user_root / "tas");
-        FS::SetSuyuPath(FS::SuyuPath::IconsDir, user_root / "icons");
-        FS::SetSuyuPath(FS::SuyuPath::ThemesDir, user_root / "themes");
-        FS::SetSuyuPath(FS::SuyuPath::KeysDir, FS::GetAppDataRoamingDirectory() / "suyu" / "keys");
     }
 #endif
+    const auto apply_user_root = [&] {
+      if (user_root) {
+        namespace FS = Common::FS;
+        // Capture the normal keys location before selecting a portable data profile.
+#ifdef _WIN32
+        const auto keys = FS::GetAppDataRoamingDirectory() / "suyu" / "keys";
+#else
+        const auto keys = FS::GetDataDirectory("XDG_DATA_HOME") / "suyu" / "keys";
+#endif
+        std::filesystem::create_directories(*user_root);
+        FS::SetSuyuPath(FS::SuyuPath::EdenDir, *user_root);
+        const auto set_path = [&](FS::SuyuPath kind, const char* suffix) {
+            const auto path = *user_root / suffix;
+            std::filesystem::create_directories(path);
+            FS::SetSuyuPath(kind, path);
+        };
+        set_path(FS::SuyuPath::ConfigDir, "config");
+        set_path(FS::SuyuPath::CacheDir, "cache");
+        set_path(FS::SuyuPath::ShaderDir, "cache/shader");
+        set_path(FS::SuyuPath::LogDir, "log");
+        set_path(FS::SuyuPath::NANDDir, "nand");
+        set_path(FS::SuyuPath::SaveDir, "nand");
+        set_path(FS::SuyuPath::SDMCDir, "sdmc");
+        set_path(FS::SuyuPath::DumpDir, "dump");
+        set_path(FS::SuyuPath::LoadDir, "load");
+        set_path(FS::SuyuPath::ScreenshotsDir, "screenshots");
+        set_path(FS::SuyuPath::PlayTimeDir, "play_time");
+        set_path(FS::SuyuPath::CrashDumpsDir, "crash_dumps");
+        set_path(FS::SuyuPath::AmiiboDir, "amiibo");
+        set_path(FS::SuyuPath::TASDir, "tas");
+        set_path(FS::SuyuPath::IconsDir, "icons");
+        set_path(FS::SuyuPath::ThemesDir, "themes");
+        FS::SetSuyuPath(FS::SuyuPath::KeysDir, keys);
+      }
+    };
+    apply_user_root();
 
     Common::Log::Initialize();
     Common::Log::SetColorConsoleBackendEnabled(true);
@@ -310,6 +361,11 @@ int main(int argc, char** argv) {
 
     bool use_multiplayer = false;
     bool fullscreen = false;
+    bool headless = false;
+    bool recomp_strict = false;
+    std::string recomp_report;
+    std::string recomp_input_dump;
+    int headless_timeout_seconds = 0;
     Service::AM::FrontendAppletParameters load_parameters{};
     std::string nickname{};
     std::string password{};
@@ -321,6 +377,13 @@ int main(int argc, char** argv) {
         {"config", required_argument, 0, 'c'},
         {"fullscreen", no_argument, 0, 'f'},
         {"help", no_argument, 0, 'h'},
+        {"headless", no_argument, 0, 'H'},
+        {"user-dir", required_argument, 0, 'U'},
+        {"recomp-strict", no_argument, 0, 'S'},
+        {"recomp-stats", required_argument, 0, 'R'},
+        {"dump-recomp-inputs", required_argument, 0, 'D'},
+        {"headless-timeout", required_argument, 0, 'T'},
+        {"show-fps", no_argument, 0, 'F'},
         {"game", required_argument, 0, 'g'},
         {"applet-params", optional_argument, 0, 'l'},
         {"multiplayer", required_argument, 0, 'm'},
@@ -332,7 +395,7 @@ int main(int argc, char** argv) {
     };
 
     while (optind < argc) {
-        int arg = getopt_long(argc, argv, "g:fhvp::c:u:l::", long_options, &option_index);
+        int arg = getopt_long(argc, argv, "g:fFhHvp::c:u:l::T:", long_options, &option_index);
         if (arg != -1) {
             switch (static_cast<char>(arg)) {
             case 'c':
@@ -345,6 +408,27 @@ int main(int argc, char** argv) {
             case 'h':
                 PrintHelp(argv[0]);
                 return 0;
+            case 'H':
+                headless = true;
+                break;
+            case 'F':
+                g_show_fps = true;
+                break;
+            case 'U': break; // Applied before logging/config initialization.
+            case 'S': recomp_strict = true; break;
+            case 'R': recomp_report = optarg; break;
+            case 'D': recomp_input_dump = optarg; headless = true; break;
+            case 'T': {
+                const std::string_view value{optarg};
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(),
+                                                    headless_timeout_seconds);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                    headless_timeout_seconds < 0) {
+                    std::cerr << "--headless-timeout requires a non-negative integer\n";
+                    return 1;
+                }
+                break;
+            }
             case 'g': {
                 const std::string str_arg(optarg);
                 filepath = str_arg;
@@ -426,6 +510,7 @@ int main(int argc, char** argv) {
     }
 
     SdlConfig config{config_path};
+    apply_user_root(); // Explicit profiles override absolute paths saved in imported configs.
 
     // apply the log_filter setting
     // the logger was initialized before and doesn't pick up the filter on its own
@@ -439,6 +524,19 @@ int main(int argc, char** argv) {
 
     if (selected_user.has_value()) {
         Settings::values.current_user = std::clamp(*selected_user, 0, 7);
+    }
+
+    const auto original_renderer = Settings::values.renderer_backend.GetValue();
+    SCOPE_EXIT {
+        if (headless) Settings::values.renderer_backend.SetValue(original_renderer);
+    };
+
+    // --headless never draws anything - force the Null renderer backend
+    // unconditionally (not just as a config default) so a config file's own
+    // backend choice can't accidentally pull in a real GL/Vulkan device on a
+    // machine that may have no GPU or display server at all.
+    if (headless) {
+        Settings::values.renderer_backend.SetValue(Settings::RendererBackend::Null);
     }
 
 #ifdef _WIN32
@@ -500,6 +598,9 @@ int main(int argc, char** argv) {
     struct RecompModule {
         Core::RecompBlockFn (*lookup)(u64){};
         void (*set_base)(u64){};
+        // Where the loader put this module. Zero until the backend publishes
+        // it; the lookup below uses it to ask only the module that owns a PC.
+        u64 base{};
     };
     static std::vector<RecompModule> s_recomp_modules;
 
@@ -561,8 +662,33 @@ int main(int argc, char** argv) {
 #endif
 
     if (!s_recomp_modules.empty()) {
-        // Combined lookup: try each module's lookup until one returns non-null.
+        // Combined lookup. Asking every module in turn is what this used to do,
+        // and it was expensive in a way that did not show up until the dispatch
+        // loop was profiled: a PC in the last module paid a full failed search
+        // in each earlier one first, and each of those searches is two nested
+        // binary searches over hundreds of thousands of entries. Half of all
+        // execution time was going into finding blocks rather than running
+        // them. The module that owns a PC is the one with the greatest base not
+        // exceeding it - the same rule the backend already uses to turn a PC
+        // into a module-relative offset - so pick that one and ask only it.
+        // The exhaustive loop stays as a fallback for the window before any
+        // base has been published, when there is nothing to choose between.
         Core::SetRecompLookup([](u64 pc) -> Core::RecompBlockFn {
+            size_t best = s_recomp_modules.size();
+            u64 best_base = 0;
+            for (size_t i = 0; i < s_recomp_modules.size(); ++i) {
+                const u64 base = s_recomp_modules[i].base;
+                if (base && base <= pc && base >= best_base) {
+                    best = i;
+                    best_base = base;
+                }
+            }
+            if (best < s_recomp_modules.size()) {
+                if (auto fn = s_recomp_modules[best].lookup(pc)) return fn;
+                // A miss in the owning module is a real miss; the address
+                // belongs to it and no other module can hold that block.
+                if (best_base) return nullptr;
+            }
             for (const auto& m : s_recomp_modules) {
                 if (auto fn = m.lookup(pc)) return fn;
             }
@@ -572,6 +698,7 @@ int main(int argc, char** argv) {
         // rtld=index0, main=index1, subsdk0=index2, ..., sdk=last.
         Core::SetRecompBaseSetter([](size_t index, const char*, u64 base) {
             if (index < s_recomp_modules.size() && s_recomp_modules[index].set_base) {
+                s_recomp_modules[index].base = base;
                 s_recomp_modules[index].set_base(base);
             }
         });
@@ -619,6 +746,7 @@ int main(int argc, char** argv) {
                  Common::FS::GetSuyuPathString(Common::FS::SuyuPath::KeysDir));
     }
 
+    apply_user_root(); // The explicit profile also owns the mod directory.
     LOG_INFO(Frontend, "suyu-cmd: Initializing system...");
     Core::System system{};
     system.Initialize();
@@ -626,25 +754,72 @@ int main(int argc, char** argv) {
 
     InputCommon::InputSubsystem input_subsystem{};
 
+    Core::ConfigureRecompDiagnostics(recomp_strict, !recomp_report.empty());
+    Core::SetRecompInputDump(recomp_input_dump);
+    const auto profile_path = Common::FS::GetSuyuPath(Common::FS::SuyuPath::EdenDir).string();
+    std::string termination = "load_error";
+    u64 report_program_id = 0;
+    const auto write_report = [&] {
+        if (!recomp_report.empty()) {
+            Core::WriteRecompReport(recomp_report,
+                Core::RecompHasFailure() ? Core::RecompFailureReason() : termination,
+                filepath, profile_path, report_program_id);
+        }
+    };
+    // Also report controlled early returns, without throwing from a scope-exit destructor.
+    SCOPE_EXIT {
+        try { write_report(); }
+        catch (const std::exception& error) {
+            LOG_ERROR(Frontend, "Cannot write execution report: {}", error.what());
+        }
+    };
+    write_report(); // Validate the report destination before running the game.
+    if (recomp_strict && !Core::GetRecompLookup()) {
+        Core::RecompFail("aot_backend_unavailable");
+        return 2;
+    }
+    LOG_INFO(Frontend, "Execution profile: user_dir='{}', game='{}', backend={}, strict={}",
+             profile_path, filepath, Core::GetRecompLookup() ? "aot" : "jit", recomp_strict);
+
+#ifdef SUYU_CMD_STATIC_RECOMP
+    Core::SetRecompIdentities(kRecompIdentities);
+#endif
     // Apply the command line arguments
     system.ApplySettings();
 
-    std::unique_ptr<EmuWindow_SDL2> emu_window;
-    switch (Settings::values.renderer_backend.GetValue()) {
-    case Settings::RendererBackend::OpenGL_GLSL:
-    case Settings::RendererBackend::OpenGL_GLASM:
-    case Settings::RendererBackend::OpenGL_SPIRV:
-        emu_window = std::make_unique<EmuWindow_SDL2_GL>(&input_subsystem, system, fullscreen);
-        break;
-    case Settings::RendererBackend::Vulkan:
-        emu_window = std::make_unique<EmuWindow_SDL2_VK>(&input_subsystem, system, fullscreen);
-        break;
-    case Settings::RendererBackend::Null:
-        emu_window = std::make_unique<EmuWindow_SDL2_Null>(&input_subsystem, system, fullscreen);
-        break;
-    default:
-        emu_window = std::make_unique<EmuWindow_SDL2_VK>(&input_subsystem, system, fullscreen);
-        break;
+    // Two separate owning pointers rather than one std::unique_ptr<EmuWindow>:
+    // Core::Frontend::EmuWindow's destructor is protected (only a concrete
+    // subclass may destroy one through a base pointer), so a unique_ptr
+    // templated on the abstract base wouldn't compile. EmuWindow_Headless
+    // doesn't derive from EmuWindow_SDL2 (that base's constructor itself
+    // calls SDL_Init(SDL_INIT_VIDEO), exactly what --headless must avoid), so
+    // it can't share EmuWindow_SDL2's ownership slot either. `emu_window`
+    // below is a non-owning view used by every call site that only needs the
+    // abstract interface.
+    std::unique_ptr<EmuWindow_SDL2> sdl_window;
+    std::unique_ptr<EmuWindow_Headless> headless_window;
+    Core::Frontend::EmuWindow* emu_window = nullptr;
+    if (headless) {
+        headless_window = std::make_unique<EmuWindow_Headless>();
+        emu_window = headless_window.get();
+    } else {
+        switch (Settings::values.renderer_backend.GetValue()) {
+        case Settings::RendererBackend::OpenGL_GLSL:
+        case Settings::RendererBackend::OpenGL_GLASM:
+        case Settings::RendererBackend::OpenGL_SPIRV:
+            sdl_window = std::make_unique<EmuWindow_SDL2_GL>(&input_subsystem, system, fullscreen);
+            break;
+        case Settings::RendererBackend::Vulkan:
+            sdl_window = std::make_unique<EmuWindow_SDL2_VK>(&input_subsystem, system, fullscreen);
+            break;
+        case Settings::RendererBackend::Null:
+            sdl_window = std::make_unique<EmuWindow_SDL2_Null>(&input_subsystem, system, fullscreen);
+            break;
+        default:
+            sdl_window = std::make_unique<EmuWindow_SDL2_VK>(&input_subsystem, system, fullscreen);
+            break;
+        }
+        emu_window = sdl_window.get();
     }
 
 #ifdef _WIN32
@@ -689,6 +864,13 @@ int main(int argc, char** argv) {
     } else {
         load_parameters.applet_id = Service::AM::AppletId::Application;
     }
+    // Bind the configured input to the emulated controllers. The Qt frontend
+    // does this before booting; suyu-cmd never did, so every button stayed
+    // unmapped and no input of any kind - keyboard or pad - ever reached the
+    // guest, however correct the configuration was.
+    system.HIDCore().SetSupportedStyleTag({Core::HID::NpadStyleSet::All});
+    system.HIDCore().ReloadInputDevices();
+
     LOG_INFO(Frontend, "suyu-cmd: Calling system.Load for '{}'...", filepath);
     const Core::SystemResultStatus load_result{system.Load(*emu_window, filepath, load_parameters)};
     LOG_INFO(Frontend, "suyu-cmd: system.Load returned: {}", static_cast<int>(load_result));
@@ -719,8 +901,11 @@ int main(int argc, char** argv) {
                          "additional help.\n\nError Code: {:04X}-{:04X}\nError Description: {}",
                          loader_id, error_id, static_cast<Loader::ResultStatus>(error_id));
         }
-        break;
+        return 1;
     }
+
+    if (!Core::AllRecompModulesValidated()) return 2;
+    report_program_id = system.GetApplicationProcessProgramID();
 
     if (use_multiplayer) {
         if (auto member = system.GetRoomNetwork().GetRoomMember().lock()) {
@@ -737,7 +922,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Core is loaded, start the GPU (makes the GPU contexts current to this thread)
+    if (!recomp_input_dump.empty()) {
+        termination = "inputs_exported";
+        write_report();
+        system.ShutdownMainProcess();
+        return 0;
+    }
     system.GPU().Start();
     system.GetCpuManager().OnGpuReady();
 
@@ -764,22 +954,47 @@ int main(int argc, char** argv) {
         }
     }
 
-    system.RegisterExitCallback([&] {
-        // Just exit right away.
-        exit(0);
-    });
+    std::atomic<bool> guest_exit{false};
+    system.RegisterExitCallback([&] { guest_exit.store(true); });
 
 #ifdef __unix__
     Common::Linux::StartGamemode();
 #endif
-
+    g_headless_interrupted = 0;
+    std::signal(SIGINT, HeadlessSignalHandler);
+    std::signal(SIGTERM, HeadlessSignalHandler);
+    termination = "running";
     void(system.Run());
-    if (system.DebuggerEnabled()) {
-        system.InitializeDebugger();
+    // Service initialization may require the scheduler to run. Synchronize
+    // startup before accepting an immediate shutdown from the run loop.
+    if (!system.GetAppletManager().WaitForFrontendProcess(std::chrono::seconds(10))) {
+        Core::RecompFail("frontend_process_start_timeout");
     }
-    while (emu_window->IsOpen()) {
-        emu_window->WaitEvent();
+    if (system.DebuggerEnabled()) system.InitializeDebugger();
+    const auto deadline = headless && headless_timeout_seconds > 0
+        ? std::optional{std::chrono::steady_clock::now() +
+                        std::chrono::seconds(headless_timeout_seconds)} : std::nullopt;
+    auto next_report = std::chrono::steady_clock::now();
+    while (!guest_exit.load() && !g_headless_interrupted && !Core::RecompHasFailure() &&
+           (headless || sdl_window->IsOpen())) {
+        const auto now = std::chrono::steady_clock::now();
+        if (deadline && now >= *deadline) { termination = "timeout"; break; }
+        if (now >= next_report) {
+            if (headless) {
+                const auto perf = system.GetAndResetPerfStats();
+                LOG_INFO(Frontend, "[headless] program_id={:016X} fps={:.1f} speed={:.0f}%",
+                         report_program_id, perf.average_game_fps, perf.emulation_speed * 100.0);
+            }
+            write_report();
+            next_report = now + std::chrono::seconds(5);
+        }
+        if (headless) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        else sdl_window->WaitEvent(); // Bounded wait also observes CPU failures without UI events.
     }
+    if (Core::RecompHasFailure()) termination = Core::RecompFailureReason();
+    else if (g_headless_interrupted) termination = "signal";
+    else if (termination == "running") termination = guest_exit ? "guest_exit" : "window_closed";
+    LOG_INFO(Frontend, "Execution ended: {}", termination);
     system.DetachDebugger();
     void(system.Pause());
     system.ShutdownMainProcess();
@@ -789,7 +1004,8 @@ int main(int argc, char** argv) {
 #endif
 
     detached_tasks.WaitForAllTasks();
-    return 0;
+    write_report();
+    return Core::RecompHasFailure() ? 2 : 0;
     } catch (const std::exception& e) {
         LOG_CRITICAL(Frontend, "Unhandled fatal exception in suyu-cmd: {}", e.what());
         return -1;

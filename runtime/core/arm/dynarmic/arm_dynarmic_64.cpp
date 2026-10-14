@@ -7,6 +7,7 @@
 #include "common/settings.h"
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
+#include "core/arm/recomp/recomp_diagnostics.h"
 #include "core/arm/dynarmic/dynarmic_exclusive_monitor.h"
 #include "core/core_timing.h"
 #include "core/hle/kernel/k_process.h"
@@ -356,6 +357,7 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
 }
 
 HaltReason ArmDynarmic64::RunThread(Kernel::KThread* thread) {
+    RecompExecutionTimer timer{m_core_index, true};
     m_jit->ClearExclusiveState();
     return TranslateHaltReason(m_jit->Run());
 }

@@ -15,6 +15,7 @@
 #include "common/string_util.h"
 #include "core/arm/exclusive_monitor.h"
 #include "core/core.h"
+#include "core/arm/recomp/recomp_identity.h"
 
 #include "launch_timestamp_cache.h"
 #include "core/core_timing.h"
@@ -342,6 +343,14 @@ struct System::Impl {
         LOG_INFO(Core, "Load: calling kernel.MakeApplicationProcess");
         kernel.MakeApplicationProcess(process->GetHandle());
         LOG_INFO(Core, "Load: kernel.MakeApplicationProcess returned");
+
+        // An input capture stops after the effective NSOs are loaded, before
+        // spawning services or running guest code. The CLI owns final shutdown.
+        if (RecompInputDumpEnabled()) {
+            program_id = params.program_id;
+            FinishRecompInputDump(program_id);
+            return SystemResultStatus::Success;
+        }
 
         // Set up the rest of the system.
         SystemResultStatus init_result{SetupForApplicationProcess(system, emu_window)};

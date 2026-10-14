@@ -236,11 +236,17 @@ void AppletManager::CreateAndInsertByFrontendAppletParameters(
     LOG_INFO(Service_AM, "CreateAndInsertByFrontendAppletParameters: setting pending process");
     {
         std::scoped_lock lk{m_lock};
+        m_frontend_process_started = false;
         m_pending_process = std::move(process);
         m_pending_parameters = params;
     }
     m_cv.notify_all();
     LOG_INFO(Service_AM, "CreateAndInsertByFrontendAppletParameters: notified");
+}
+
+bool AppletManager::WaitForFrontendProcess(std::chrono::milliseconds timeout) {
+    std::unique_lock lk{m_lock};
+    return m_cv.wait_for(lk, timeout, [&] { return m_frontend_process_started; });
 }
 
 void AppletManager::RequestExit() {
@@ -357,6 +363,8 @@ void AppletManager::SetWindowSystem(WindowSystem* window_system) {
 
     LOG_INFO(Service_AM, "SetWindowSystem: calling applet->process->Run()");
     applet->process->Run();
+    m_frontend_process_started = true;
+    m_cv.notify_all();
     LOG_INFO(Service_AM, "SetWindowSystem: applet->process->Run() returned");
 }
 

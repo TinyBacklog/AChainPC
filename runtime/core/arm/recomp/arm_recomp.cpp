@@ -5,14 +5,56 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <unordered_set>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "common/logging/log.h"
 #include "core/arm/recomp/arm_recomp.h"
+#include "core/arm/recomp/recomp_diagnostics.h"
+#include "core/arm/recomp/recomp_identity.h"
+#include "core/arm/recomp/recomp_exclusive.h"
 #include "core/core.h"
+#include "core/core_timing.h"
+#include "core/hardware_properties.h"
+#include "common/page_table.h"
+#include <x86intrin.h>
+#include <ctime>
+
+// Medicao: com SUYU_RECOMP_PROFILE definido cada volta do ciclo de despacho
+// conta ciclos separadamente na procura do bloco, na execucao do bloco e no
+// resto da volta. Sem a variavel nada disto corre.
+namespace {
+struct DispatchProfile {
+    std::atomic<unsigned long long> lookup_cycles{0}, block_cycles{0}, blocks{0};
+    bool on = std::getenv("SUYU_RECOMP_PROFILE") != nullptr;
+    std::atomic<unsigned long long> last_report{0};
+
+    // Reported every couple of seconds rather than only at exit. A whole
+    // session averages menus, loading and play together, and the question here
+    // is what a combat frame costs - which an aggregate over five minutes of
+    // everything else cannot answer.
+    void Tick() {
+        const unsigned long long now = (unsigned long long)std::time(nullptr);
+        unsigned long long previous = last_report.load(std::memory_order_relaxed);
+        if (now < previous + 2) return;
+        if (!last_report.compare_exchange_strong(previous, now)) return;
+        const unsigned long long l = lookup_cycles.exchange(0);
+        const unsigned long long b = block_cycles.exchange(0);
+        const unsigned long long n = blocks.exchange(0);
+        if (!n) return;
+        const double total = (double)(l + b);
+        fprintf(stderr, "[recomp] blocos/s=%llu  procura=%.1f%%  bloco=%.1f%%  ciclos/bloco=%.1f\n",
+                n / 2, 100.0 * l / total, 100.0 * b / total, total / (double)n);
+    }
+};
+DispatchProfile g_dispatch_profile;
+}  // namespace
 #include "core/hle/kernel/k_thread.h"
+#include "core/hle/kernel/k_process.h"
+#include "core/hle/kernel/k_page_table.h"
 #include "core/arm/debug.h"
 #include "core/arm/dynarmic/arm_dynarmic_64.h"
 #include "core/memory.h"
@@ -47,6 +89,9 @@ struct GuestContextView {
     // thread pointer) because the two have different owners and different
     // lifetimes; see the note on GuestContext in core/recompiler/arm64_to_c.h.
     u64 tpidrro_el0;
+    // How many chained blocks the recompiled code may still run before handing
+    // control back. See the note on GuestContext in core/recompiler/arm64_to_c.h.
+    s32 chain_budget;
 };
 
 // Matches RecompHostMem in the generated runtime. The recompiled code calls
@@ -58,6 +103,12 @@ struct RecompHostMem {
     void* user;
     u64 (*load)(void* user, u64 va, u32 size);
     void (*store)(void* user, u64 va, u32 size, u64 value);
+    int (*exclusive)(void* user, u32 instruction);
+    // Lets the recompiled code resolve an ordinary access itself instead of
+    // calling back out per access. See the note on RecompHostMem in
+    // core/recompiler/arm64_to_c.h for what a zero pointer in an entry means.
+    const void* page_table;
+    u64 address_space_size;
 };
 
 // Nothing links these two builds together, so the shared layout is pinned on
@@ -71,6 +122,14 @@ static_assert(offsetof(GuestContextView, vreg) == 312);
 static_assert(offsetof(GuestContextView, tpidr_el0) == 824);
 static_assert(offsetof(GuestContextView, host_mem) == 832);
 static_assert(offsetof(GuestContextView, tpidrro_el0) == 840);
+static_assert(offsetof(GuestContextView, chain_budget) == 848);
+
+// A block that ends in a known successor calls it directly instead of coming
+// back here, so this bounds how long the recompiled code may run before the
+// loop below gets to look at interrupts, pending SVCs and the halt request.
+// 128 blocks is roughly 550 guest instructions - far below a timeslice, and far
+// above the 4.3 instructions a round trip through the dispatcher used to buy.
+constexpr s32 kChainBudget = 128;
 
 // The generated code signals an SVC by parking with this set. Kept in sync
 // with the emitted recomp_svc contract in core/recompiler/arm64_to_c.h.
@@ -101,9 +160,20 @@ constexpr u64 kUnresolvedImportTrap = 0xFFFF'FFFF'0000'0000ULL;
 namespace {
 std::atomic<RecompLookupFn> g_recomp_lookup{nullptr};
 std::atomic<RecompBaseFn> g_recomp_base_setter{nullptr};
+std::mutex g_recomp_initialization;
+std::unordered_set<const Kernel::KProcess*> g_relocated_processes;
 } // namespace
 
+// Fora de linha de proposito, para custar o mesmo que a chamada de um bloco:
+// prologo, chamada, retorno.
+void RecompMeasureNoop(void* ctx);
+[[gnu::noinline]] void RecompMeasureNoop(void* ctx) {
+    asm volatile("" : : "r"(ctx) : "memory");
+}
+
 void SetRecompLookup(RecompLookupFn lookup) {
+    std::scoped_lock lock{g_recomp_initialization};
+    g_relocated_processes.clear();
     g_recomp_lookup.store(lookup, std::memory_order_release);
 }
 
@@ -123,6 +193,7 @@ struct ArmRecomp::Impl {
         bridge.user = this;
         bridge.load = &Impl::HostLoad;
         bridge.store = &Impl::HostStore;
+        bridge.exclusive = &Impl::HostExclusive;
         ctx.host_mem = &bridge;
     }
 
@@ -146,6 +217,21 @@ struct ArmRecomp::Impl {
         }
     }
 
+    static int HostExclusive(void* user, u32 instruction) {
+        auto& self = *static_cast<Impl*>(user);
+        const auto system_register = instruction & 0xffffffe0U;
+        if (system_register == 0xd53be020U || system_register == 0xd53be040U ||
+            system_register == 0xd53be000U) {
+            const u32 rt = instruction & 31;
+            if (rt != 31) self.ctx.x[rt] = system_register == 0xd53be000U
+                ? Hardware::CNTFREQ : self.system.CoreTiming().GetClockTicks();
+            return true;
+        }
+        if (!self.exclusive_monitor) return false;
+        return ExecuteRecompExclusive(*self.exclusive_monitor, self.core_index,
+                                       self.ctx.x, instruction);
+    }
+
     /// Base address of the module containing `pc`, so an address can be turned
     /// into the module-relative offset a recompiled image is keyed by. The
     /// module list is fixed once the process is running, so it is read once.
@@ -154,15 +240,7 @@ struct ArmRecomp::Impl {
             modules_read = true;
             if (auto* process = thread->GetOwnerProcess()) {
                 modules = FindModules(process);
-                // Now that the loader has placed everything, tell each image
-                // where its own module went.
-                if (const auto setter = g_recomp_base_setter.load(std::memory_order_acquire)) {
-                    // modules is keyed by base, so iteration is load order.
-                    size_t index = 0;
-                    for (const auto& [module_base, name] : modules) {
-                        setter(index++, name.c_str(), module_base);
-                    }
-                }
+
             }
         }
         u64 base = 0;
@@ -271,6 +349,8 @@ struct ArmRecomp::Impl {
         std::string name;
         u64 value = 0;
         bool defined = false;
+        bool weak = false;
+        bool absolute = false;
     };
     SymInfo ReadSymbol(const DynInfo& d, u32 index) {
         auto& mem = system.ApplicationMemory();
@@ -285,6 +365,8 @@ struct ArmRecomp::Impl {
         // had nonzero low 16 bits.
         const u16 shndx = mem.Read16(sym_va + 6);
         s.value = mem.Read64(sym_va + 8);
+        s.weak = (mem.Read8(sym_va + 4) >> 4) == 2; // STB_WEAK
+        s.absolute = shndx == 0xfff1; // SHN_ABS
         s.defined = shndx != 0; // SHN_UNDEF == 0
         if (d.strtab_va) {
             std::string name;
@@ -321,7 +403,7 @@ struct ArmRecomp::Impl {
         for (u32 i = 1; i < max_index; ++i) { // index 0 is always the null symbol
             const auto sym = ReadSymbol(d, i);
             if (sym.defined && !sym.name.empty()) {
-                out.emplace(sym.name, d.mod_base + sym.value);
+                out.emplace(sym.name, (sym.absolute ? 0 : d.mod_base) + sym.value);
             }
         }
     }
@@ -406,10 +488,16 @@ struct ArmRecomp::Impl {
                     mem.Write64(d.mod_base + r_offset, synthetic + addend);
                     ++applied;
                 } else if (sym.defined || sym.value != 0) {
-                    mem.Write64(d.mod_base + r_offset, d.mod_base + sym.value + addend);
+                    mem.Write64(d.mod_base + r_offset, (sym.absolute ? 0 : d.mod_base) + sym.value + addend);
                     ++applied;
                 } else if (auto it = exports.find(sym.name); it != exports.end()) {
                     mem.Write64(d.mod_base + r_offset, it->second + addend);
+                    ++applied;
+                } else if (sym.weak && !sym.defined) {
+                    // An unresolved weak reference is zero. In particular, SDK
+                    // optional hooks test this pointer before calling it; a trap
+                    // would turn an absent hook into an apparently present one.
+                    mem.Write64(d.mod_base + r_offset, addend);
                     ++applied;
                 } else if (r_type == R_AARCH64_ABS64 && r_sym == 0) {
                     // STN_UNDEF ABS64: S is 0 by definition, so the result is
@@ -448,7 +536,7 @@ struct ArmRecomp::Impl {
         for (const auto& [module_base, name] : all_modules) {
             DynInfo d;
             if (ParseDynamic(module_base, d)) {
-                d.trap_va = FindReturnStub(module_base);
+                d.trap_va = RecompStrict() ? 0 : FindReturnStub(module_base);
                 IndexExports(d, exports);
                 dyns.push_back(d);
             }
@@ -515,6 +603,10 @@ ArmRecomp::ArmRecomp(System& system, bool uses_wall_clock, RecompLookupFn lookup
 ArmRecomp::~ArmRecomp() = default;
 
 bool ArmRecomp::EnterFallback() {
+    if (RecompStrict()) {
+        RecompFail(fmt::format("aot_fallback_required pc={:#x}", impl->ctx.pc));
+        return false;
+    }
     if (impl->fallback_unavailable) {
         return false;
     }
@@ -563,12 +655,32 @@ HaltReason ArmRecomp::RunFallback(Kernel::KThread* thread) {
 }
 
 HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
+    if (impl->exclusive_monitor) impl->exclusive_monitor->ClearExclusive(impl->core_index);
+    // Publish the running process's page table so the recompiled code can
+    // resolve ordinary loads and stores without a call back into the emulator.
+    // Refreshed on every entry because the table belongs to the process, and
+    // the thread on this core can change between entries.
+    if (auto* process = thread->GetOwnerProcess()) {
+        const auto& table = process->GetPageTable().GetImpl();
+        static_assert(sizeof(Common::PageTable::PageEntryData) == 32);
+        static_assert(offsetof(Common::PageTable::PageEntryData, ptr) == 0);
+        impl->bridge.page_table = table.entries.data();
+        impl->bridge.address_space_size = u64{1} << table.GetAddressSpaceBits();
+        static std::atomic<bool> pt_announced{false};
+        if (!pt_announced.exchange(true)) {
+            LOG_INFO(Core_ARM, "recomp page table: entries={} as_bits={} fastmem={}",
+                     fmt::ptr(table.entries.data()), table.GetAddressSpaceBits(),
+                     fmt::ptr(table.fastmem_arena));
+        }
+    } else {
+        impl->bridge.page_table = nullptr;
+        impl->bridge.address_space_size = 0;
+    }
     // Logged once so it is obvious from a log whether the backend was ever
     // entered at all. A run with no errors is otherwise indistinguishable from
     // a run where the guest thread was never scheduled onto it.
-    static bool announced = false;
-    if (!announced) {
-        announced = true;
+    static std::atomic<bool> announced{false};
+    if (!announced.exchange(true)) {
         LOG_INFO(Core_ARM, "ArmRecomp::RunThread entered, pc={:#x}", impl->ctx.pc);
     }
     if (!impl->lookup) {
@@ -576,19 +688,19 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
         return HaltReason::BreakLoop;
     }
 
-    // Registering every loaded image's base with the host dispatcher is a
-    // side effect of this call, not something its return value is used for
-    // here - the dispatcher needs it done once before the first lookup, or
-    // every image's base stays 0 and every lookup misses.
-    static bool bases_registered = false;
-    if (!bases_registered) {
-        bases_registered = true;
-        impl->ModuleBaseFor(thread, impl->ctx.pc);
-    }
-
     if (!impl->rela_applied) {
+        // CPU interfaces share guest memory. Relocate once per process before
+        // any core executes it, and initialize every core's module map.
+        std::scoped_lock lock{g_recomp_initialization};
+        impl->ModuleBaseFor(thread, impl->ctx.pc);
+        if (g_relocated_processes.insert(thread->GetOwnerProcess()).second) {
+            if (const auto setter = g_recomp_base_setter.load(std::memory_order_acquire)) {
+                size_t index = 0;
+                for (const auto& [base, name] : impl->modules) setter(index++, name.c_str(), base);
+            }
+            impl->ApplyAllRelocations(impl->modules);
+        }
         impl->rela_applied = true;
-        impl->ApplyAllRelocations(impl->modules);
     }
 
     // A previous miss handed this thread to the JIT; keep running there until
@@ -597,6 +709,10 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     // a thread already in the JIT that calls an unresolved import would
     // otherwise be handed the sentinel address to execute, which is unmapped.
     if (impl->ctx.pc == kUnresolvedImportTrap) {
+        if (RecompStrict()) {
+            RecompFail(fmt::format("unresolved_import caller={:#x}", impl->ctx.x[30]));
+            return HaltReason::BreakLoop;
+        }
         impl->ctx.x[0] = 0;
         impl->ctx.pc = impl->ctx.x[30];
         impl->in_fallback = false;
@@ -609,7 +725,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     impl->ctx.halted = 0;
 
     while (!impl->ctx.halted) {
-        if (impl->interrupted.load(std::memory_order_relaxed)) {
+        if (RecompHasFailure() || impl->interrupted.load(std::memory_order_relaxed)) {
             return HaltReason::BreakLoop;
         }
 
@@ -638,6 +754,10 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
         impl->trail[impl->trail_pos++ & (Impl::kTrail - 1)] = impl->ctx.pc;
 
         if (impl->ctx.pc == kUnresolvedImportTrap) {
+        if (RecompStrict()) {
+            RecompFail(fmt::format("unresolved_import caller={:#x}", impl->ctx.x[30]));
+            return HaltReason::BreakLoop;
+        }
             // Landed here via a BLR through a GOT/JUMP_SLOT slot patched by
             // ApplyRelocTable because no definition was found anywhere - most
             // such imports exist for code paths this particular boot never
@@ -655,7 +775,10 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
             continue;
         }
 
+        const bool prof = g_dispatch_profile.on;
+        const unsigned long long t_loop = prof ? __rdtsc() : 0;
         RecompBlockFn block = impl->lookup(impl->ctx.pc);
+        const unsigned long long t_lookup = prof ? __rdtsc() : 0;
         // Test hook: forces every lookup past the Nth to miss, so the JIT
         // fallback below can be exercised on a title that would otherwise never
         // hit a gap. Unset in normal runs.
@@ -711,12 +834,33 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
             // keep going instead of returning PrefetchAbort - that halt reason
             // makes the kernel suspend the thread for a debugger that is not
             // attached, which is a permanent, silent black-screen hang.
-            if (miss_index < 64) {
-                LOG_ERROR(Core_ARM, "No recompiled block at PC {:#x}; falling back to JIT",
-                          impl->ctx.pc);
-            } else {
-                LOG_DEBUG(Core_ARM, "No recompiled block at PC {:#x}; falling back to JIT",
-                          impl->ctx.pc);
+            // The raw PC alone is not actionable: module bases move between
+            // runs, so a bare address cannot be looked up in an export. Name
+            // the module and the offset inside it, which is what
+            // build_game.py --coverage-report consumes and what a person needs
+            // to find the instruction in the disassembly.
+            {
+                u64 miss_offset{};
+                const std::string miss_module = RecompModuleAt(impl->ctx.pc, miss_offset);
+                if (miss_index < 64) {
+                    LOG_ERROR(Core_ARM,
+                              "No recompiled block at PC {:#x} ({}+{:#x}); falling back to JIT. "
+                              "Re-run with --recomp-stats and feed the report to build_game.py "
+                              "--coverage-report to close this gap.",
+                              impl->ctx.pc, miss_module.empty() ? "?" : miss_module, miss_offset);
+                } else {
+                    LOG_DEBUG(Core_ARM, "No recompiled block at PC {:#x} ({}+{:#x}); falling back to JIT",
+                              impl->ctx.pc, miss_module.empty() ? "?" : miss_module, miss_offset);
+                }
+            }
+            if (RecompStatisticsEnabled()) {
+                // Only attribute addresses in a known executable mapping.
+                u64 offset{};
+                const auto module = RecompModuleAt(impl->ctx.pc, offset);
+                RecordRecompFallback(impl->core_index, impl->ctx.pc,
+                    block ? "unhandled_instruction" : "missing_block",
+                    module, offset,
+                    module == "unknown" ? 0 : impl->system.ApplicationMemory().Read32(impl->ctx.pc));
             }
             if (!EnterFallback()) {
                 LOG_CRITICAL(Core_ARM,
@@ -728,7 +872,25 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
             return RunFallback(thread);
         }
 
-        block(&impl->ctx);
+        {
+            RecompExecutionTimer timer{impl->core_index, false};
+            // Medicao: com SUYU_RECOMP_EXTRA_CALL definido cada bloco paga uma
+            // chamada de funcao a mais. A diferenca de tempo e o custo marginal
+            // de uma fronteira de bloco, que e a diferenca estrutural entre
+            // este backend e um JIT que encadeia blocos.
+            static const bool extra_call = std::getenv("SUYU_RECOMP_EXTRA_CALL") != nullptr;
+            if (extra_call) RecompMeasureNoop(&impl->ctx);
+            impl->ctx.chain_budget = kChainBudget;
+            block(&impl->ctx);
+        }
+        if (prof) {
+            const unsigned long long t_end = __rdtsc();
+            g_dispatch_profile.lookup_cycles.fetch_add(t_lookup - t_loop, std::memory_order_relaxed);
+            g_dispatch_profile.block_cycles.fetch_add(t_end - t_lookup, std::memory_order_relaxed);
+            if ((g_dispatch_profile.blocks.fetch_add(1, std::memory_order_relaxed) & 0xFFFFF) == 0) {
+                g_dispatch_profile.Tick();
+            }
+        }
 
         // The block stopped on an instruction the decoder has no translation
         // for, having parked the PC on that instruction. Running it on the JIT
@@ -742,6 +904,15 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
             if (unhandled_count.fetch_add(1, std::memory_order_relaxed) < 16) {
                 LOG_WARNING(Core_ARM, "recomp: unimplemented opcode at {:#x}; running on JIT",
                             impl->ctx.pc);
+            }
+            if (RecompStatisticsEnabled()) {
+                // Only attribute addresses in a known executable mapping.
+                u64 offset{};
+                const auto module = RecompModuleAt(impl->ctx.pc, offset);
+                RecordRecompFallback(impl->core_index, impl->ctx.pc,
+                    block ? "unhandled_instruction" : "missing_block",
+                    module, offset,
+                    module == "unknown" ? 0 : impl->system.ApplicationMemory().Read32(impl->ctx.pc));
             }
             if (!EnterFallback()) {
                 LOG_CRITICAL(Core_ARM, "recomp: unimplemented opcode at {:#x} and no JIT fallback",
@@ -770,6 +941,9 @@ HaltReason ArmRecomp::StepThread(Kernel::KThread* thread) {
         return HaltReason::BreakLoop;
     }
     const RecompBlockFn block = impl->lookup(impl->ctx.pc);
+    // Stepping means one block, so no chaining: a budget of one makes the first
+    // known successor write its PC and return instead of being called directly.
+    impl->ctx.chain_budget = 1;
     if (!block) {
         return HaltReason::PrefetchAbort;
     }

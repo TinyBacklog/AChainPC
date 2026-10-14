@@ -7,6 +7,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <chrono>
 #include <mutex>
 
 #include "core/hle/service/am/am_types.h"
@@ -44,6 +45,7 @@ public:
 
     void CreateAndInsertByFrontendAppletParameters(std::unique_ptr<Process> process,
                                                    const FrontendAppletParameters& params);
+    bool WaitForFrontendProcess(std::chrono::milliseconds timeout);
     void RequestExit();
     void OperationModeChanged();
 
@@ -58,6 +60,7 @@ private:
     std::condition_variable m_cv;
 
     WindowSystem* m_window_system{};
+    bool m_frontend_process_started{};
 
     FrontendAppletParameters m_pending_parameters{};
     std::unique_ptr<Process> m_pending_process{};

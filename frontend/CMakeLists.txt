@@ -16,6 +16,8 @@ if (SUYU_CMD OR YUZU_CMD)
     set(SUYU_CMD_SOURCES
         emu_window/emu_window_sdl2.cpp
         emu_window/emu_window_sdl2.h
+        emu_window/emu_window_headless.cpp
+        emu_window/emu_window_headless.h
         emu_window/emu_window_sdl2_gl.cpp
         emu_window/emu_window_sdl2_gl.h
         emu_window/emu_window_sdl2_null.cpp
@@ -51,6 +53,7 @@ if (SUYU_CMD OR YUZU_CMD)
         # collide between modules) and their loadable shared image.
         set(RECOMP_STATIC_ONLY ON)
         set(_recomp_libs "")
+        set(_recomp_identities "#pragma once\n#include \"core/arm/recomp/recomp_identity.h\"\ninline constexpr Core::RecompModuleIdentity kRecompIdentities[] = {\n")
         # file(GLOB) treats [ ] * ? in the WHOLE path as glob syntax, not just
         # the trailing "/*" - a title whose exported folder name carries its
         # title ID in brackets (e.g. "Pokemon Sword[0100ABF008968000][US][v0]",
@@ -91,15 +94,47 @@ if (SUYU_CMD OR YUZU_CMD)
                             "Re-export the game to regenerate its AOT cache.")
                     endif()
                 endif()
+                set(_identity_path "${SUYU_CMD_RECOMP_DIR}/${_m}/recomp_identity.json")
+                if (NOT EXISTS "${_identity_path}")
+                    message(FATAL_ERROR "Module ${_m} lacks identity metadata. Re-export with the current recompiler.")
+                endif()
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_identity_path}")
+                file(READ "${_identity_path}" _identity)
+                string(JSON _abi GET "${_identity}" abi_version)
+                string(JSON _identity_name GET "${_identity}" module)
+                if (NOT _abi EQUAL 3 OR NOT _identity_name STREQUAL _m)
+                    message(FATAL_ERROR "Incompatible AOT identity for ${_m}")
+                endif()
+                string(APPEND _recomp_identities "    {\"${_m}\", {{")
+                set(_segment_index 0)
+                foreach(_segment text rodata data)
+                    string(JSON _hash GET "${_identity}" sha256 ${_segment_index})
+                    set(_segment_path "${SUYU_CMD_RECOMP_DIR}/${_m}/data/${_segment}.bin")
+                    if (EXISTS "${_segment_path}")
+                        file(SHA256 "${_segment_path}" _actual_hash)
+                        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_segment_path}")
+                    else()
+                        set(_actual_hash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    endif()
+                    if (NOT _hash STREQUAL _actual_hash)
+                        message(FATAL_ERROR "AOT segment modified after export: ${_segment_path}")
+                    endif()
+                    string(APPEND _recomp_identities "\"${_hash}\",")
+                    math(EXPR _segment_index "${_segment_index} + 1")
+                endforeach()
+                string(APPEND _recomp_identities "}}},\n")
                 add_subdirectory("${SUYU_CMD_RECOMP_DIR}/${_m}"
                                  "${CMAKE_CURRENT_BINARY_DIR}/recomp/${_m}")
                 list(APPEND _recomp_libs "recomp_static_${_m}")
             endif()
         endforeach()
         if (_recomp_libs)
+            string(APPEND _recomp_identities "};\nstatic_assert(Core::RecompAbiVersion == 3);\n")
+            file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/recomp_identities.h" CONTENT "${_recomp_identities}")
             add_executable(suyu-cmd-static ${SUYU_CMD_SOURCES}
                            "${SUYU_CMD_RECOMP_DIR}/recomp_registration.c")
             target_compile_definitions(suyu-cmd-static PRIVATE SUYU_CMD_STATIC_RECOMP=1)
+            target_include_directories(suyu-cmd-static PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
             target_link_libraries(suyu-cmd-static PRIVATE ${_recomp_libs})
             list(APPEND SUYU_CMD_TARGETS suyu-cmd-static)
         else()

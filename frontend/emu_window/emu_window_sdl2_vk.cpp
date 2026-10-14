@@ -30,9 +30,13 @@ EmuWindow_SDL2_VK::EmuWindow_SDL2_VK(InputCommon::InputSubsystem* input_subsyste
     // generic "suyu ..." title that would otherwise flash for a moment
     // before the game's own title gets set later in the boot sequence.
     const std::string window_title = [] {
+#ifdef _WIN32
         wchar_t exe_w[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_w, MAX_PATH);
         return std::filesystem::path(exe_w).stem().string();
+#else
+        return std::filesystem::canonical("/proc/self/exe").stem().string();
+#endif
     }();
 #else
     const std::string window_title = fmt::format("suyu {} | {}-{} (Vulkan)", Common::g_build_name,

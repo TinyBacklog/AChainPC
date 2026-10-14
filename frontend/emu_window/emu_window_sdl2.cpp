@@ -643,17 +643,11 @@ void EmuWindow_SDL2::WaitEvent() {
     // Called on main thread
     SDL_Event event;
 
-    if (!SDL_WaitEvent(&event)) {
-        const char* error = SDL_GetError();
-        if (!error || strcmp(error, "") == 0) {
-            // https://github.com/libsdl-org/SDL/issues/5780
-            // Sometimes SDL will return without actually having hit an error condition;
-            // just ignore it in this case.
-            return;
-        }
-
-        LOG_CRITICAL(Frontend, "SDL_WaitEvent failed: {}", error);
-        exit(1);
+    // A bounded wait lets the frontend observe CPU failures and shutdown.
+    // SDL can leave errors from optional device discovery while pumping events;
+    // a timeout must not terminate an otherwise healthy game because of them.
+    if (!SDL_WaitEventTimeout(&event, 100)) {
+        return;
     }
 
     switch (event.type) {
@@ -721,7 +715,27 @@ void EmuWindow_SDL2::WaitEvent() {
         const auto results = system.GetAndResetPerfStats();
         std::string game_name;
         [[maybe_unused]] auto _ = system.GetGameName(game_name);
-        if (g_native_export_mode) {
+        if (g_show_fps) {
+            // Both counters, deliberately. They come from different places and
+            // disagreeing is informative rather than a nuisance: average_game_fps
+            // counts presents inside the renderer, which the Vulkan path skips
+            // whenever the window does not count as shown, while system_fps counts
+            // the display service's VBlanks in nvdisp_disp0 and does not care which
+            // renderer is in use. Showing only the first one made a run that was
+            // plainly at 30 report 12.
+            //
+            // Logged as well as shown: a title bar cannot be pasted into a report,
+            // and this is the number every performance question here is about.
+            LOG_INFO(Frontend,
+                     "FPS: game {:.1f} | system {:.1f} | speed {:.0f}% | frametime {:.2f} ms",
+                     results.average_game_fps, results.system_fps,
+                     results.emulation_speed * 100.0, results.frametime * 1000.0);
+            const auto title = fmt::format("{} | game {:.0f} / system {:.0f} FPS ({:.0f}%)",
+                                           game_name.empty() ? "suyu" : game_name,
+                                           results.average_game_fps, results.system_fps,
+                                           results.emulation_speed * 100.0);
+            SDL_SetWindowTitle(render_window, title.c_str());
+        } else if (g_native_export_mode) {
             // Standalone game export: plain game title, no emulator branding.
             if (!game_name.empty()) {
                 SDL_SetWindowTitle(render_window, game_name.c_str());
