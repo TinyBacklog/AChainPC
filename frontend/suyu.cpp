@@ -769,29 +769,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Mods/patches: a standalone export is a self-contained folder, so a "mods"
-    // directory beside the executable is where users will drop things. Point
-    // the existing load directory at it and the normal PatchManager path
-    // (LayeredFS, IPS/pchtxt patches, cheats) picks it up unchanged - same
-    // <title_id>/<mod name>/ layout the Qt frontend uses.
-    {
-#ifdef _WIN32
-        wchar_t exe_w[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, exe_w, MAX_PATH);
-        const auto exe_dir = std::filesystem::path(exe_w).parent_path();
-#else
-        const auto exe_dir = std::filesystem::path(argv[0]).parent_path();
-#endif
-        const auto local_mods = exe_dir / "mods";
-        std::error_code ec;
-        std::filesystem::create_directories(local_mods, ec);
-        if (std::filesystem::is_directory(local_mods)) {
-            Common::FS::SetSuyuPath(Common::FS::SuyuPath::LoadDir, local_mods);
-            LOG_INFO(Frontend, "Using local mod directory: {}", local_mods.string());
-        }
-        LOG_INFO(Frontend, "Keys directory (never bundled): {}",
-                 Common::FS::GetSuyuPathString(Common::FS::SuyuPath::KeysDir));
-    }
+    LOG_INFO(Frontend, "Keys directory (never bundled): {}",
+             Common::FS::GetSuyuPathString(Common::FS::SuyuPath::KeysDir));
 
     apply_user_root(); // The explicit profile also owns the mod directory.
     LOG_INFO(Frontend, "suyu-cmd: Initializing system...");
@@ -838,6 +817,11 @@ int main(int argc, char** argv) {
         // Scripted setup: put an update into this profile's NAND, then stop. Done
         // before any window exists, so it needs neither SDL nor a GPU.
         termination = "install_failed";
+        // InstallNSP dereferences the opened file without checking it.
+        if (!std::filesystem::is_regular_file(install_path)) {
+            LOG_CRITICAL(Frontend, "Failed to install '{}': no such file", install_path);
+            return 1;
+        }
         system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
         system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
         system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
