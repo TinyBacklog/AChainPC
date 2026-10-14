@@ -55,11 +55,16 @@ def ensure_ini(path: Path, template: str, preset: str) -> bool:
 
 
 def prepare(record: dict, work: Path = config.WORK) -> tuple[Path, Path]:
-    """Play profile and ini for a run: migrates an old work/ profile, creates the ini."""
+    """Play profile and ini for a run: migrates the legacy work/profile, creates the ini.
+
+    Only work/profile is ever moved. game.json's "profile" is just updated, never
+    trusted as something to move and delete: it could name any directory."""
     target = config.play_profile()
-    old = Path(record.get("profile", ""))
-    if old != target and migrate(old, target):
-        print(f"profile moved: {old} -> {target}")
+    legacy = work / "profile"
+    if migrate(legacy, target):
+        print(f"profile moved: {legacy} -> {target}")
+    elif legacy.is_dir():
+        print(f"note: {legacy} left in place; {target} already exists")
     if record.get("profile") != str(target):
         record["profile"] = str(target)
         config.save(work, record)

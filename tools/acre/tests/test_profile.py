@@ -76,3 +76,55 @@ class EnsureIniTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrepareSafetyTest(unittest.TestCase):
+    """prepare() may only ever migrate the legacy work/profile."""
+
+    def setUp(self):
+        target = Path(tempfile.mkdtemp()) / "xdg" / "astralchain" / "profile"
+        patcher = mock.patch.object(profile.config, "play_profile", return_value=target)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _record(self, work, profile_value):
+        record = {"base": "b", "keys_dir": "k", "inputs": "i"}
+        if profile_value is not None:
+            record["profile"] = profile_value
+        return record
+
+    def test_foreign_profile_path_is_never_moved(self):
+        root = Path(tempfile.mkdtemp())
+        foreign = root / "suyu-data"
+        (foreign / "keys").mkdir(parents=True)
+        (foreign / "keys" / "prod.keys").write_text("k")
+        work = root / "work"
+        work.mkdir()
+        record = self._record(work, str(foreign))
+        with mock.patch.object(profile, "detect_preset", return_value="keyboard"):
+            profile.prepare(record, work)
+        self.assertTrue((foreign / "keys" / "prod.keys").exists())
+
+    def test_missing_profile_key_never_touches_cwd(self):
+        root = Path(tempfile.mkdtemp())
+        work = root / "work"
+        work.mkdir()
+        marker = root / "marker"
+        marker.write_text("x")
+        cwd = os.getcwd()
+        os.chdir(root)
+        try:
+            with mock.patch.object(profile, "detect_preset", return_value="keyboard"):
+                profile.prepare(self._record(work, None), work)
+        finally:
+            os.chdir(cwd)
+        self.assertTrue(marker.exists())
+
+    def test_legacy_work_profile_is_migrated(self):
+        work = Path(tempfile.mkdtemp()) / "work"
+        save = work / "profile" / "nand" / "slot"
+        save.parent.mkdir(parents=True)
+        save.write_text("p")
+        with mock.patch.object(profile, "detect_preset", return_value="keyboard"):
+            target, _ = profile.prepare(self._record(work, str(work / "profile")), work)
+        self.assertEqual((target / "nand" / "slot").read_text(), "p")
