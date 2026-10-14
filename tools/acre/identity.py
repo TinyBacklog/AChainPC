@@ -23,6 +23,10 @@ def verify(inputs_dir: Path, expected: dict) -> None:
     """Raises IdentityError naming the first module and segment that differ."""
     version = expected.get("version", "the supported version")
     others = expected.get("known_other_versions", {})
+    present = sorted(p.parent.name for p in Path(inputs_dir).glob("*/data"))
+    extra = [name for name in present if name not in expected["modules"]]
+    if extra:
+        raise IdentityError(f"module {', '.join(extra)} is not part of {version} (modded dump?)")
     for name, wanted in expected["modules"].items():
         module_dir = Path(inputs_dir) / name
         if not all((module_dir / "data" / f"{s}.bin").is_file() for s in SEGMENTS):

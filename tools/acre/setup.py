@@ -43,15 +43,21 @@ def run(base: Path, update: Path | None, keys_dir: Path, work: Path = config.WOR
         config.fail(config.EXIT_NO_FRONTEND,
                     f"{frontend} not built; run `cmake --build build --target astralchain`")
 
-    profile, inputs, tmp = work / "profile", work / "inputs", work / "inputs.tmp"
+    # The dump runs in a throwaway profile, so no stale mod can reach it. The play
+    # profile holds the player's saves and is never wiped; it only gets the update.
+    profile, dump_profile = work / "profile", work / "setup-profile"
+    inputs, tmp = work / "inputs", work / "inputs.tmp"
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    common = [f"--user-dir={profile}", f"--keys-dir={keys_dir}"]
-    fresh_profile(profile)
+    keys = f"--keys-dir={keys_dir}"
+    common = [f"--user-dir={dump_profile}", keys]
+    fresh_profile(dump_profile)
+    profile.mkdir(parents=True, exist_ok=True)
 
     if update is not None:
-        log = work / "logs" / f"setup-install-{stamp}.log"
-        if _frontend(frontend, log, *common, f"--install={update}") != 0:
-            config.fail(config.EXIT_INSTALL_FAILED, f"installing the update failed; see {log}")
+        for target in (dump_profile, profile):
+            log = work / "logs" / f"setup-install-{target.name}-{stamp}.log"
+            if _frontend(frontend, log, f"--user-dir={target}", keys, f"--install={update}") != 0:
+                config.fail(config.EXIT_INSTALL_FAILED, f"installing the update failed; see {log}")
         print(f"update installed: {update.name}")
 
     if tmp.exists():
