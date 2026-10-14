@@ -30,6 +30,10 @@ if (SUYU_CMD OR YUZU_CMD)
         emu_window/emu_window_sdl2_vk.cpp
         emu_window/emu_window_sdl2_vk.h
         precompiled_headers.h
+        acre_ini.cpp
+        acre_ini.h
+        acre_ini_apply.cpp
+        acre_ini_apply.h
         sdl_config.cpp
         sdl_config.h
         suyu.cpp

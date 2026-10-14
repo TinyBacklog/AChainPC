@@ -36,3 +36,12 @@ endforeach()
 acre_lifter_executable(lifter_exclusive test_exclusive.cpp)
 add_test(NAME lifter_exclusive COMMAND lifter_exclusive)
 set_tests_properties(lifter_exclusive PROPERTIES LABELS lifter)
+
+# astralchain.ini parser (frontend/acre_ini.cpp); pure, links only simpleini.
+add_executable(test_acre_ini test_acre_ini.cpp ${PROJECT_SOURCE_DIR}/frontend/acre_ini.cpp)
+target_include_directories(test_acre_ini PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_features(test_acre_ini PRIVATE cxx_std_20)
+target_link_libraries(test_acre_ini PRIVATE SimpleIni::SimpleIni)
+target_compile_definitions(test_acre_ini PRIVATE ACRE_INI_TEMPLATE="${PROJECT_SOURCE_DIR}/frontend/astralchain.ini")
+add_test(NAME frontend_acre_ini COMMAND test_acre_ini)
+set_tests_properties(frontend_acre_ini PROPERTIES LABELS frontend)

@@ -51,6 +51,7 @@
 #include "core/perf_stats.h"
 #include "frontend_common/config.h"
 #include "frontend_common/content_manager.h"
+#include "frontend/acre_ini_apply.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
@@ -128,6 +129,8 @@ static void PrintHelp(const char* argv0) {
                  "    -F, --show-fps    Show the frame rate in the title bar and log it\n"
                  "    --user-dir=PATH   Isolated config, NAND, saves and logs (keys stay external)\n"
                  "    --dump-recomp-inputs=PATH  Dump effective NSO segments and exit before execution\n"
+                 "    --ini=PATH        astralchain.ini to apply (default: beside the binary, then\n"
+                 "                      $XDG_CONFIG_HOME/astralchain/astralchain.ini)\n"
                  "    --install=PATH    Install an NSP (update/DLC) into the profile NAND and exit\n"
                  "    --keys-dir=PATH   Directory holding prod.keys (default: the suyu data dir)\n"
                  "    --recomp-strict   Stop with an error instead of falling back to JIT\n"
@@ -390,6 +393,7 @@ int main(int argc, char** argv) {
     std::string recomp_report;
     std::string recomp_input_dump;
     std::string install_path;
+    std::optional<std::filesystem::path> ini_path;
     int headless_timeout_seconds = 0;
     Service::AM::FrontendAppletParameters load_parameters{};
     std::string nickname{};
@@ -408,6 +412,7 @@ int main(int argc, char** argv) {
         {"recomp-stats", required_argument, 0, 'R'},
         {"dump-recomp-inputs", required_argument, 0, 'D'},
         {"install", required_argument, 0, 'I'},
+        {"ini", required_argument, 0, 'N'},
         {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
         {"show-fps", no_argument, 0, 'F'},
@@ -446,6 +451,7 @@ int main(int argc, char** argv) {
             case 'R': recomp_report = optarg; break;
             case 'D': recomp_input_dump = optarg; headless = true; break;
             case 'I': install_path = optarg; break;
+            case 'N': ini_path = std::filesystem::absolute(optarg); break;
             case 'K': break; // Applied before logging/config initialization.
             case 'T': {
                 const std::string_view value{optarg};
@@ -538,8 +544,20 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Before SdlConfig: constructing it already writes the profile's config file.
+    if (ini_path && !std::filesystem::is_regular_file(*ini_path)) {
+        std::cerr << "--ini: no such file " << ini_path->string() << "\n";
+        return 1;
+    }
     SdlConfig config{config_path};
     apply_user_root(); // Explicit profiles override absolute paths saved in imported configs.
+
+    if (const auto found = FindAcreIni(ini_path, std::filesystem::path(argv[0]).parent_path())) {
+        const AcreIni acre_ini = LoadAcreIni(*found);
+        ApplyAcreIni(acre_ini);
+        fullscreen = fullscreen || acre_ini.fullscreen;
+        LOG_INFO(Frontend, "Settings from {}", found->string());
+    }
 
     // apply the log_filter setting
     // the logger was initialized before and doesn't pick up the filter on its own
