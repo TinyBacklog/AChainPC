@@ -17,7 +17,7 @@ git filter-repo --force --invert-paths \
   --path vcpkg.json --path vcpkg-configuration.json --path vcpkg-overlays \
   --path externals/vcpkg --path externals/breakpad --path externals/discord-rpc \
   --path externals/cpp-jwt --path externals/libusb --path externals/libadrenotools \
-  --path externals/metal-cpp --path externals/renderdoc --path externals/nxdumptool \
+  --path externals/metal-cpp --path externals/nxdumptool \
   --path externals/nx-optimizer --path externals/ownfoil --path externals/nxapi \
   --path externals/sse2neon --path externals/dynarmic --path externals/oaknut
 git filter-repo --force \

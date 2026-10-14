@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.22)
 
-project(yuzu)
+project(AstralChainRe)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules/find")
@@ -70,7 +70,7 @@ if (YUZU_STATIC_ROOM)
 endif()
 
 # qt stuff
-option(ENABLE_QT "Enable the Qt frontend" ON)
+option(ENABLE_QT "Enable the Qt frontend (not available in AstralChainRe)" OFF)
 option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" OFF)
 option(ENABLE_UPDATE_CHECKER "Enable update checker (for Qt and Android)" OFF)
 cmake_dependent_option(YUZU_USE_QT_MULTIMEDIA "Use QtMultimedia for Camera"  OFF "NOT YUZU_USE_BUNDLED_QT" OFF)
@@ -221,21 +221,17 @@ endif()
 option(YUZU_USE_BUNDLED_SIRIT "Download bundled sirit" ${BUNDLED_SIRIT_DEFAULT})
 
 # FreeBSD 15+ has libusb, versions below should disable it
-cmake_dependent_option(ENABLE_LIBUSB "Enable the use of LibUSB" ON "WIN32 OR PLATFORM_LINUX OR PLATFORM_FREEBSD OR APPLE" OFF)
+cmake_dependent_option(ENABLE_LIBUSB "Enable the use of LibUSB" OFF "WIN32 OR PLATFORM_LINUX OR PLATFORM_FREEBSD OR APPLE" OFF)
 
 cmake_dependent_option(ENABLE_OPENGL "Enable OpenGL" ON "NOT (WIN32 AND ARCHITECTURE_arm64) AND NOT APPLE" OFF)
 mark_as_advanced(FORCE ENABLE_OPENGL)
 
-option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
-option(SUYU_BUILD_LIBRETRO_CORE "Build suyu as a libretro core (suyu_libretro.dll)" OFF)
-if (SUYU_BUILD_LIBRETRO_CORE)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
+option(ENABLE_WEB_SERVICE "Enable web services (not available in AstralChainRe)" OFF)
 option(ENABLE_WIFI_SCAN "Enable WiFi scanning" OFF)
 
 cmake_dependent_option(USE_DISCORD_PRESENCE "Enables Discord Rich Presence" OFF "ENABLE_QT" OFF)
 
-option(YUZU_TESTS "Compile tests" "${BUILD_TESTING}")
+option(YUZU_TESTS "Compile runtime tests (sources not vendored)" OFF)
 
 # Install udev rules on Linux (mainly for gyros)
 # Only acts on joysticks and nothing else.
@@ -247,7 +243,7 @@ option(YUZU_LEGACY "Apply patches that improve compatibility with older GPUs (e.
 
 option(NIGHTLY_BUILD "Use Nightly qualifiers in the update checker and build metadata" OFF)
 
-cmake_dependent_option(YUZU_ROOM "Enable dedicated room functionality" ON "NOT ANDROID" OFF)
+cmake_dependent_option(YUZU_ROOM "Enable dedicated room functionality" OFF "NOT ANDROID" OFF)
 cmake_dependent_option(YUZU_ROOM_STANDALONE "Enable standalone room executable" ON "YUZU_ROOM" OFF)
 
 cmake_dependent_option(YUZU_CMD "Compile the suyu-cli executable" ON "NOT ANDROID" OFF)
@@ -701,7 +697,7 @@ if (MSVC AND CXX_CLANG)
     link_libraries(llvm-mingw-runtime)
 endif()
 
-add_subdirectory(src)
+add_subdirectory(runtime)
 
 if (ENABLE_DEBUG_TOOLS)
     add_subdirectory(tools/maxwell-disas)

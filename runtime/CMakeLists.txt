@@ -239,19 +239,6 @@ endif()
 add_subdirectory(common)
 add_subdirectory(network)
 
-if (YUZU_ROOM)
-    add_subdirectory(dedicated_room)
-endif()
-
-if (YUZU_ROOM_STANDALONE)
-    add_subdirectory(yuzu_room_standalone)
-    set_target_properties(yuzu-room PROPERTIES OUTPUT_NAME "suyu-room")
-endif()
-
-if (YUZU_STATIC_ROOM)
-    return()
-endif()
-
 add_subdirectory(nintendo_library)
 add_subdirectory(core)
 add_subdirectory(audio_core)
@@ -261,30 +248,6 @@ add_subdirectory(input_common)
 add_subdirectory(frontend_common)
 add_subdirectory(shader_recompiler)
 
-if (YUZU_TESTS)
-    add_subdirectory(tests)
-endif()
-
-if (YUZU_CMD)
-    add_subdirectory(suyu_cmd)
-endif()
-
-if (ENABLE_QT)
-    add_subdirectory(qt_common)
-    add_subdirectory(suyu)
-endif()
-
-if (SUYU_BUILD_LIBRETRO_CORE)
-    add_subdirectory(libretro_core)
-endif()
-
-if (ENABLE_WEB_SERVICE)
-    add_subdirectory(web_service)
-endif()
-
-if (ANDROID)
-    add_subdirectory(android/app/src/main/jni)
-    target_include_directories(yuzu-android PRIVATE android/app/src/main)
-endif()
+add_subdirectory(${PROJECT_SOURCE_DIR}/frontend ${CMAKE_BINARY_DIR}/frontend)
 
 include(GenerateDepHashes)

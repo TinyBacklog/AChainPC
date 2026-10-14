@@ -142,7 +142,7 @@ if (SUYU_CMD OR YUZU_CMD)
         endif()
     endif()
 
-    create_resource("../../dist/suyu.bmp" "suyu_cmd/suyu_icon.h" "suyu_icon")
+    create_resource("${PROJECT_SOURCE_DIR}/dist/suyu.bmp" "suyu_cmd/suyu_icon.h" "suyu_icon")
 
     foreach(_t ${SUYU_CMD_TARGETS})
         if (APPLE)
