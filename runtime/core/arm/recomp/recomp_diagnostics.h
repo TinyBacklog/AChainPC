@@ -23,6 +23,37 @@ void RecordRecompExecution(std::size_t core, bool jit, u64 nanoseconds, u64 bloc
 void WriteRecompReport(const std::string& path, std::string_view termination,
                        std::string_view game, std::string_view user_dir, u64 program_id);
 
+// Times one RunThread slice of recompiled code as a whole and counts the blocks
+// dispatched in it. Reading the clock around every block instead cost about a
+// fifth of the main thread in game (a spin loop returns to the dispatcher
+// constantly), which made --recomp-stats distort what it measured.
+class RecompSliceTimer {
+public:
+    explicit RecompSliceTimer(std::size_t core)
+        : enabled{RecompStatisticsEnabled()}, core_index{core} {
+        if (enabled) start = std::chrono::steady_clock::now();
+    }
+    ~RecompSliceTimer() {
+        Finish();
+    }
+    void CountBlock() {
+        ++blocks;
+    }
+    /// Records the slice now; later calls and the destructor do nothing.
+    void Finish() {
+        if (!enabled) return;
+        enabled = false;
+        RecordRecompExecution(core_index, false,
+            static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - start).count()), blocks);
+    }
+private:
+    bool enabled;
+    std::size_t core_index;
+    u64 blocks{};
+    std::chrono::steady_clock::time_point start{};
+};
+
 class RecompExecutionTimer {
 public:
     RecompExecutionTimer(std::size_t core, bool jit)

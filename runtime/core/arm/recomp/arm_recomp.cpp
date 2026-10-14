@@ -724,6 +724,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     impl->interrupted.store(false, std::memory_order_relaxed);
     impl->ctx.halted = 0;
 
+    RecompSliceTimer slice{impl->core_index};
     while (!impl->ctx.halted) {
         if (RecompHasFailure() || impl->interrupted.load(std::memory_order_relaxed)) {
             return HaltReason::BreakLoop;
@@ -869,11 +870,12 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
                              impl->ctx.pc);
                 return HaltReason::PrefetchAbort;
             }
+            slice.Finish();  // the JIT times itself
             return RunFallback(thread);
         }
 
         {
-            RecompExecutionTimer timer{impl->core_index, false};
+            slice.CountBlock();
             // Medicao: com SUYU_RECOMP_EXTRA_CALL definido cada bloco paga uma
             // chamada de funcao a mais. A diferenca de tempo e o custo marginal
             // de uma fronteira de bloco, que e a diferenca estrutural entre
@@ -919,6 +921,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
                              impl->ctx.pc);
                 return HaltReason::PrefetchAbort;
             }
+            slice.Finish();  // the JIT times itself
             return RunFallback(thread);
         }
 
