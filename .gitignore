@@ -91,3 +91,4 @@ vcpkg_installed/
 /.superpowers/
 __pycache__/
 *.pyc
+/work.prev-*/
