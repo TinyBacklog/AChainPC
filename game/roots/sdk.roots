@@ -1,0 +1,34 @@
+# Module-relative entry points observed at run time (coverage) in suyu's
+# export-chain validation, not reachable by static root discovery.
+2f340
+317974
+322dcc
+3e01bc
+3e037c
+3e2c80
+3f0394
+3f0638
+3f0738
+3fe534
+3fe7d4
+3fe7d8
+40330c
+41075c
+410774
+4115d4
+4115dc
+41334c
+416938
+41693c
+419948
+41e7ac
+420788
+420dd0
+420fd4
+4aefc4
+4af060
+4ba3b0
+4ba594
+4ba5fc
+4e525c
+4eb3b4

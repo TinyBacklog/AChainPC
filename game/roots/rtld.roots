@@ -1,0 +1,3 @@
+# Module-relative entry points observed at run time (coverage) in suyu's
+# export-chain validation, not reachable by static root discovery.
+7b0

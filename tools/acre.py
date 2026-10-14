@@ -26,12 +26,17 @@ def main(argv=None) -> int:
                    help="directory holding prod.keys (default: %(default)s)")
     p.add_argument("--skip-update", action="store_true", help=argparse.SUPPRESS)
 
+    commands.add_parser("export", help="generate C from the dumped modules (incremental)")
+
     args = parser.parse_args(argv)
     if args.command == "setup":
         from acre import setup
         if args.update is None and not args.skip_update:
             parser.error("--update is required (the supported version is 1.0.1)")
         setup.run(args.base, None if args.skip_update else args.update, args.keys)
+    elif args.command == "export":
+        from acre import export
+        export.run()
     return 0
 
 
