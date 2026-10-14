@@ -26,6 +26,7 @@ add_library(
     algorithm.h
     alignment.h
     announce_multiplayer_room.h
+    web_result.h
     assert.cpp
     assert.h
     atomic_ops.h
