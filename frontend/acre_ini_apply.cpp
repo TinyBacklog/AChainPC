@@ -11,8 +11,31 @@
 #include "frontend/sdl_config.h"
 #include "input_common/main.h"
 
+// Read by the lifted code at every patched instruction (see TranslatePatched).
+extern "C" {
+volatile int acre_fps60 = 0;
+}
+
 namespace {
 int g_display_index = 0;
+
+Settings::ResolutionSetup ResolutionFor(int scale) {
+    switch (scale) {
+    case 2: return Settings::ResolutionSetup::Res2X;
+    case 3: return Settings::ResolutionSetup::Res3X;
+    case 4: return Settings::ResolutionSetup::Res4X;
+    default: return Settings::ResolutionSetup::Res1X;
+    }
+}
+
+Settings::ScalingFilter FilterFor(std::string_view name) {
+    if (name == "nearest") return Settings::ScalingFilter::NearestNeighbor;
+    if (name == "bilinear") return Settings::ScalingFilter::Bilinear;
+    if (name == "bicubic") return Settings::ScalingFilter::Bicubic;
+    if (name == "gaussian") return Settings::ScalingFilter::Gaussian;
+    if (name == "scaleforce") return Settings::ScalingFilter::ScaleForce;
+    return Settings::ScalingFilter::Fsr;
+}
 
 template <std::size_t N>
 int IndexOf(const std::array<const char*, N>& names, std::string_view name) {
@@ -77,6 +100,9 @@ void ApplyAcreIni(const AcreIni& ini) {
     Settings::values.vsync_mode.SetValue(ini.vsync ? Settings::VSyncMode::Fifo
                                                    : Settings::VSyncMode::Immediate);
     Settings::values.volume.SetValue(static_cast<u8>(ini.volume));
+    acre_fps60 = ini.fps60 ? 1 : 0;
+    Settings::values.resolution_setup.SetValue(ResolutionFor(ini.resolution_scale));
+    Settings::values.scaling_filter.SetValue(FilterFor(ini.scaling_filter));
 
     auto& player = Settings::values.players.GetValue()[0];
     player.connected = true;
@@ -87,8 +113,10 @@ void ApplyAcreIni(const AcreIni& ini) {
     for (const auto& [name, param] : plan.bindings) {
         Bind(player, name, param);
     }
-    LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}",
-             ini.preset, ini.display_index, ini.vsync, ini.volume);
+    LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
+             "fps60={}, resolution_scale={}, scaling_filter={}",
+             ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60,
+             ini.resolution_scale, ini.scaling_filter);
 }
 
 int AcreDisplayIndex() {

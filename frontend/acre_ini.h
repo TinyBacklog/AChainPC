@@ -16,6 +16,12 @@ struct AcreIni {
     bool vsync = true;
     int display_index = 0;
     int volume = 100;
+    /// 60fps patch (game/patches/fps60.patches). Read once at start-up.
+    bool fps60 = false;
+    /// Internal resolution multiplier, 1-4.
+    int resolution_scale = 1;
+    /// nearest, bilinear, bicubic, gaussian, scaleforce or fsr.
+    std::string scaling_filter = "fsr";
     /// steam_controller, keyboard or custom.
     std::string preset = "keyboard";
     /// With preset = custom: input name (button_a, lstick, ...) -> suyu parameter string.

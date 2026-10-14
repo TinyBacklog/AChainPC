@@ -127,6 +127,23 @@ AcreIni ParseAcreIni(const std::string& text) {
                     ini.volume = std::clamp(volume, 0, 100);
                     if (ini.volume != volume) warn(section, key, "clamped " + value + " to 0-100");
                 }
+            } else if (section == "performance" && key == "fps60") {
+                if (!ParseBool(value, ini.fps60)) warn(section, key, "expected true or false, got '" + value + "'");
+            } else if (section == "performance" && key == "resolution_scale") {
+                int scale = 0;
+                if (!ParseInt(value, scale) || scale < 1 || scale > 4) {
+                    warn(section, key, "expected 1-4, got '" + value + "'");
+                } else {
+                    ini.resolution_scale = scale;
+                }
+            } else if (section == "performance" && key == "scaling_filter") {
+                static constexpr std::array<std::string_view, 6> filters{
+                    "nearest", "bilinear", "bicubic", "gaussian", "scaleforce", "fsr"};
+                if (std::find(filters.begin(), filters.end(), value) != filters.end()) {
+                    ini.scaling_filter = value;
+                } else {
+                    warn(section, key, "unknown filter '" + value + "'; using fsr");
+                }
             } else if (section == "controls" && key == "preset") {
                 if (value == "steam_controller" || value == "keyboard" || value == "custom") {
                     ini.preset = value;
