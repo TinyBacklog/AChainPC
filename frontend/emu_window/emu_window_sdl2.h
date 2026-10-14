@@ -78,6 +78,9 @@ protected:
     /// Called when user passes the fullscreen parameter flag
     void Fullscreen();
 
+    /// Centres the window on the display chosen in astralchain.ini (0 = primary).
+    void PlaceOnConfiguredDisplay();
+
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) override;
 

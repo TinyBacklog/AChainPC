@@ -19,6 +19,7 @@ static constexpr Uint8 SDL_RELEASED = 0;
 #include "input_common/main.h"
 #include "common/param_package.h"
 #include "common/settings_input.h"
+#include "frontend/acre_ini_apply.h"
 #include "frontend/emu_window/emu_window_sdl2.h"
 #include "suyu_cmd/suyu_icon.h"
 
@@ -598,6 +599,26 @@ void EmuWindow_SDL2::ShowCursor(bool show_cursor) {
         SDL_ShowCursor();
     } else {
         SDL_HideCursor();
+    }
+}
+
+void EmuWindow_SDL2::PlaceOnConfiguredDisplay() {
+    const int index = AcreDisplayIndex();
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    SDL_DisplayID target = SDL_GetPrimaryDisplay();
+    if (index > 0 && displays && index < count) {
+        target = displays[index];
+    } else if (index > 0) {
+        LOG_WARNING(Frontend, "display_index {} out of range ({} displays); using the primary",
+                    index, count);
+    }
+    SDL_free(displays);
+    if (target != 0) {
+        SDL_SetWindowPosition(render_window, SDL_WINDOWPOS_CENTERED_DISPLAY(target),
+                              SDL_WINDOWPOS_CENTERED_DISPLAY(target));
+        LOG_INFO(Frontend, "Window on display {} ('{}')", index > 0 && index < count ? index : 0,
+                 SDL_GetDisplayName(target) ? SDL_GetDisplayName(target) : "?");
     }
 }
 

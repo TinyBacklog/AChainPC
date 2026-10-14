@@ -25,6 +25,7 @@ EmuWindow_SDL2_Null::EmuWindow_SDL2_Null(InputCommon::InputSubsystem* input_subs
                          SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
     SetWindowIcon();
+    PlaceOnConfiguredDisplay();
 
     if (fullscreen) {
         Fullscreen();

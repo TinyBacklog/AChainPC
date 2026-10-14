@@ -53,6 +53,7 @@ EmuWindow_SDL2_VK::EmuWindow_SDL2_VK(InputCommon::InputSubsystem* input_subsyste
     }
 
     SetWindowIcon();
+    PlaceOnConfiguredDisplay();
 
     if (fullscreen) {
         Fullscreen();
