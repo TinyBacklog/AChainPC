@@ -1,5 +1,6 @@
 # Runs one lifter test: generator -> C source -> native binary -> exit code.
-# Inputs: GEN (generator executable), CC, OUT_DIR, NAME, LIBS (;-list)
+# Inputs: GEN (generator executable), CC, OUT_DIR, NAME, LIBS (;-list of extra
+# compiler arguments: include dirs and libraries)
 execute_process(COMMAND "${GEN}" OUTPUT_FILE "${OUT_DIR}/${NAME}.c"
                 RESULT_VARIABLE r ERROR_VARIABLE e)
 if (NOT r EQUAL 0)

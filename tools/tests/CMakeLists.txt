@@ -28,7 +28,7 @@ foreach(t IN LISTS _lifter_tests)
              COMMAND ${CMAKE_COMMAND}
                      -DGEN=$<TARGET_FILE:lifter_gen_${t}> -DCC=${CMAKE_C_COMPILER}
                      -DOUT_DIR=${_lifter_out} -DNAME=${t}
-                     "-DLIBS=-lcrypto;-lm"
+                     "-DLIBS=-I${OPENSSL_INCLUDE_DIR};${OPENSSL_CRYPTO_LIBRARY};-lm"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/run_lifter_test.cmake)
     set_tests_properties(lifter_${t} PROPERTIES LABELS lifter TIMEOUT 600)
 endforeach()
