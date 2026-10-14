@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Integration checks against a built CLI, a ROM and an isolated profile."""
+"""Frontend CLI checks (exit codes, timeout, signals) against a built JIT binary and a ROM.
+
+Not part of ctest: it needs your game. Example:
+    python3 tools/acre/tests/integration_cli.py --binary build/bin/astralchain \\
+        --rom BASE.nsp --profile work/cli-profile --output work/logs/cli
+"""
 import argparse
 import json
 from pathlib import Path
