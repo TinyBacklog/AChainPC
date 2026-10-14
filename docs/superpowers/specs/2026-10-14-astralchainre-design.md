@@ -127,10 +127,15 @@ Limites entre módulos:
 ### Fica de fora
 
 - `suyu`, `yuzu`, `qt_common`, `suyu_cmd`, `yuzu_cmd`, `android`, `libretro_core`,
-  `dedicated_room`, `yuzu_room_standalone`, `web_service`, `nintendo_library` e `tests`.
-- Externals: breakpad, discord-rpc, enet (se o `network` permitir), cpp-httplib,
-  cpp-jwt, libusb, libadrenotools, metal-cpp, renderdoc, microprofile, nxdumptool,
-  nx-optimizer, ownfoil, nxapi, sse2neon e oaknut.
+  `dedicated_room`, `yuzu_room_standalone`, `web_service` e `tests`.
+- Externals: breakpad, discord-rpc, cpp-jwt, libusb, libadrenotools, metal-cpp,
+  nxdumptool, nx-optimizer, ownfoil, nxapi, sse2neon e oaknut.
+- Ficam, ao contrário do que esta lista dizia inicialmente:
+  - `renderdoc`: só um header, usado por `core/tools/renderdoc.cpp`.
+  - `microprofile`: usado por `common/microprofile.*`.
+  - `enet` e `cpp-httplib`: vêm via CPM, porque `network` e `nintendo_library` precisam
+    deles.
+- `nintendo_library` e `network` ficam no runtime, porque o `core` depende deles.
 
 ### Processo
 

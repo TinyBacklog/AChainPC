@@ -14,6 +14,7 @@ git filter-repo --force --invert-paths \
   --path .agents --path .claude --path .codex --path .cleanthat --path .coderabbit.yaml \
   --path docs --path img --path hooks --path dist/languages --path main --path master \
   --path part --path artifacts --path tools-local --path conanfile.txt \
+  --path tools/static_recompiler --path .tmp_diffs --path dist/qt_themes \
   --path vcpkg.json --path vcpkg-configuration.json --path vcpkg-overlays \
   --path externals/vcpkg --path externals/breakpad --path externals/discord-rpc \
   --path externals/cpp-jwt --path externals/libusb --path externals/libadrenotools \

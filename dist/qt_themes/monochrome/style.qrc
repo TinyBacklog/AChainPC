@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="monochrome">
-        <file alias="style.qss">../default/style.qss</file>
-    </qresource>
-</RCC>
