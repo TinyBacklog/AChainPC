@@ -557,6 +557,10 @@ int main(int argc, char** argv) {
         ApplyAcreIni(acre_ini);
         fullscreen = fullscreen || acre_ini.fullscreen;
         LOG_INFO(Frontend, "Settings from {}", found->string());
+    } else {
+        // The ini is authoritative: without one, its defaults apply, so deleting
+        // the file really does bring the defaults back.
+        ApplyAcreIni(AcreIni{});
     }
 
     // apply the log_filter setting

@@ -75,6 +75,18 @@ std::span<const std::string_view> AcreInputNames() {
     return kInputNames;
 }
 
+ControlPlan PlanControls(const AcreIni& ini) {
+    ControlPlan plan;
+    if (ini.preset == "steam_controller") {
+        for (const auto& [name, param] : kSteamController) {
+            plan.bindings.emplace_back(std::string(name), std::string(param));
+        }
+    } else if (ini.preset == "custom") {
+        plan.bindings.assign(ini.custom.begin(), ini.custom.end());
+    }
+    return plan;
+}
+
 AcreIni ParseAcreIni(const std::string& text) {
     AcreIni ini;
     CSimpleIniA reader;

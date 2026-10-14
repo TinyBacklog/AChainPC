@@ -81,6 +81,23 @@ int main() {
         }
     }
     {
+        // Every preset starts from the keyboard defaults, so nothing from an
+        // earlier preset or a removed custom line survives.
+        AcreIni custom = ParseAcreIni("[controls]\npreset = custom\nbutton_a = engine:x\n");
+        const ControlPlan plan = PlanControls(custom);
+        CHECK(plan.keyboard_base);
+        CHECK(plan.bindings.size() == 1);
+        CHECK(plan.bindings[0].first == "button_a");
+
+        const ControlPlan pad = PlanControls(ParseAcreIni("[controls]\npreset = steam_controller\n"));
+        CHECK(pad.keyboard_base);
+        CHECK(pad.bindings.size() == 19);
+
+        const ControlPlan keys = PlanControls(ParseAcreIni(""));
+        CHECK(keys.keyboard_base);
+        CHECK(keys.bindings.empty());
+    }
+    {
         // The template acre.py installs must parse cleanly.
         std::ifstream file(ACRE_INI_TEMPLATE);
         std::stringstream text;

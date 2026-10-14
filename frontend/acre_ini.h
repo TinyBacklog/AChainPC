@@ -26,6 +26,17 @@ struct AcreIni {
 
 AcreIni ParseAcreIni(const std::string& text);
 
+/// How player 1 gets bound: optionally reset to the keyboard defaults, then the
+/// listed input name -> suyu parameter string overrides.
+struct ControlPlan {
+    bool keyboard_base = true;
+    std::vector<std::pair<std::string, std::string>> bindings;
+};
+
+/// Every preset starts from the keyboard defaults, so no binding from an earlier
+/// preset or a removed custom line survives in the saved profile config.
+ControlPlan PlanControls(const AcreIni& ini);
+
 /// Player 1 bindings for a Steam Controller (Puck 28de:1304) through SDL HIDAPI,
 /// as input name -> suyu parameter string.
 std::span<const std::pair<std::string_view, std::string_view>> SteamControllerPreset();

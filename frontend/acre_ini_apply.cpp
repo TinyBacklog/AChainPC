@@ -80,16 +80,12 @@ void ApplyAcreIni(const AcreIni& ini) {
 
     auto& player = Settings::values.players.GetValue()[0];
     player.connected = true;
-    if (ini.preset == "keyboard") {
+    const ControlPlan plan = PlanControls(ini);
+    if (plan.keyboard_base) {
         BindKeyboard(player);
-    } else if (ini.preset == "steam_controller") {
-        for (const auto& [name, param] : SteamControllerPreset()) {
-            Bind(player, name, std::string(param));
-        }
-    } else {
-        for (const auto& [name, param] : ini.custom) {
-            Bind(player, name, param);
-        }
+    }
+    for (const auto& [name, param] : plan.bindings) {
+        Bind(player, name, param);
     }
     LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}",
              ini.preset, ini.display_index, ini.vsync, ini.volume);
