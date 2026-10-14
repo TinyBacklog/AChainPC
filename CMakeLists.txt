@@ -703,6 +703,7 @@ option(ACRE_TESTS "Build lifter tests" ON)
 if (ACRE_TESTS)
     enable_testing()
     add_subdirectory(tools/tests)
+    add_subdirectory(tools/acre)
 endif()
 
 if (ENABLE_DEBUG_TOOLS)
