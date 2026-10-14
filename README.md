@@ -16,8 +16,10 @@ your own dump of the game with update 1.0.1 applied, plus your own console keys.
 - **M1 (foundation):** done.
 - **M2 (pipeline):** done. `tools/acre.py` goes from your own dump to a native binary that runs
   fully ahead-of-time compiled.
-- **Next:** M3 (playable at 30 fps, configurable controls), then M4 (60 fps and internal
-  resolution).
+- **M3 (playable at 30 fps):** done. `astralchain.ini` holds the controls, display and audio
+  settings, and saves live in `$XDG_DATA_HOME/astralchain/`. The play checklist
+  (`docs/checklist.md`) passed with 0 fallbacks.
+- **Next:** M4 (60 fps and internal resolution), then M5 (ImGui overlay).
 
 See `docs/superpowers/specs/2026-10-14-astralchainre-design.md` for the design and roadmap.
 
@@ -52,6 +54,9 @@ You need:
 - your console keys: a directory with `prod.keys`. The default is `~/.local/share/suyu/keys`.
 
 Build the JIT frontend once, as described in [Build](#build). Then:
+
+Settings live in `~/.config/astralchain/astralchain.ini` (created on the first `run`).
+Saves live in `~/.local/share/astralchain/profile`.
 
 ```sh
 tools/acre.py setup --base "BASE.nsp" --update "UPDATE.nsp" [--keys DIR]
