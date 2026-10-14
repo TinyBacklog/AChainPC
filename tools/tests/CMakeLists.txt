@@ -14,7 +14,8 @@ set(_lifter_out "${CMAKE_CURRENT_BINARY_DIR}/out")
 file(MAKE_DIRECTORY "${_lifter_out}")
 
 # The generators check their own invariants with assert(), so NDEBUG from a
-# Release build must not reach them.
+# Release build must not reach them. -UNDEBUG is GCC/clang syntax; fine while
+# the project targets Linux only.
 function(acre_lifter_executable target source)
     add_executable(${target} ${source})
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/runtime)
