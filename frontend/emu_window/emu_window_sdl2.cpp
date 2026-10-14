@@ -629,7 +629,7 @@ void EmuWindow_SDL2::Fullscreen() {
         // to display dimensions automatically in this mode.
         {
             const SDL_DisplayMode* display_mode =
-                SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
+                SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(render_window));
             if (display_mode) {
                 SDL_SetWindowSize(render_window, display_mode->w, display_mode->h);
             } else {
