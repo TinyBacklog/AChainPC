@@ -698,6 +698,7 @@ if (MSVC AND CXX_CLANG)
 endif()
 
 add_subdirectory(runtime)
+add_subdirectory(recompiler)
 
 option(ACRE_TESTS "Build lifter tests" ON)
 if (ACRE_TESTS)

@@ -1,38 +1,12 @@
-#!/usr/bin/env python3
-"""Regenerate an existing Source export and build a Linux per-game executable.
+"""Indirect-branch roots for block discovery, ported unchanged from suyu's build_game.py.
 
-The original export and user data are never modified. Paths with spaces/brackets
-are supported. A Source export is the prerequisite; this tool does not decrypt NSPs.
+The static pass only finds code it can reach through direct branches. Everything
+reached indirectly - callbacks, vtables, switch cases, exported symbols - has to
+be seeded as a root first, from the module's data, dynamic symbols and
+relocations.
 """
-import argparse
-import hashlib
-import json
-import os
-from pathlib import Path
-import re
-import shlex
 import struct
-import subprocess
 
-REPO = Path(__file__).resolve().parents[2]
-ORDER = ['rtld', 'main', *(f'subsdk{i}' for i in range(10)), 'sdk']
-
-def run(args):
-    print(shlex.join(map(str, args)), flush=True)
-    subprocess.run(list(map(str, args)), check=True)
-
-def registration(modules):
-    out = ['#include <stdint.h>', 'typedef void (*BlockFn)(void*);',
-           'typedef struct { const char* name; BlockFn (*lookup)(uint64_t); void (*set_base)(uint64_t); } Module;']
-    for name in modules:
-        out += [f'extern BlockFn recomp_image_lookup_{name}(uint64_t);',
-                f'extern void recomp_image_set_base_{name}(uint64_t);']
-    out += ['static const Module modules[] = {']
-    out += [f'{{"{name}", recomp_image_lookup_{name}, recomp_image_set_base_{name}}},' for name in modules]
-    out += ['};', 'const Module* suyu_recomp_static_modules(unsigned* count);',
-            'const Module* suyu_recomp_static_modules(unsigned* count) {',
-            '*count = sizeof(modules) / sizeof(modules[0]); return modules; }']
-    return '\n'.join(out) + '\n'
 
 def jump_table_roots(segments):
     """Case labels reached through a switch jump table.
@@ -221,7 +195,7 @@ def eh_frame_roots(rodata_segment, text_lo, text_hi):
     return found
 
 
-def discover_roots(directory, module, use_unwind=False):
+def discover(directory, module, use_unwind=False):
     """Seed indirect targets from data, dynsym and RELA before block discovery."""
     segments = [(module[name + '_vaddr'], (directory / 'data' / (name + '.bin')).read_bytes())
                 for name in ('text', 'rodata', 'data')]
@@ -280,101 +254,3 @@ def discover_roots(directory, module, use_unwind=False):
         off += 4
     add(entry)
     return roots, entry
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--export', required=True, type=Path, help='Source export exefs directory')
-    parser.add_argument('--output', required=True, type=Path, help='New directory for regenerated export')
-    parser.add_argument('--build-dir', required=True, type=Path)
-    parser.add_argument('--rom', required=True, type=Path)
-    parser.add_argument('--user-dir', required=True, type=Path)
-    parser.add_argument('--jobs', type=int, default=8)
-    parser.add_argument('--cmake', default='cmake')
-    parser.add_argument('--generate-only', action='store_true')
-    parser.add_argument('--coverage-report', type=Path, action='append', default=[],
-                        help='Add verified module-relative entry points observed in a run')
-    parser.add_argument('--unwind-roots', action='store_true',
-                        help='Seed roots from the .eh_frame unwind tables as well. Off by '
-                             'default: measured at +1.3%% run time and +5 MB for 40 693 extra '
-                             'blocks, and it closed none of the observed gaps, which are all '
-                             'indirect targets or points where the JIT handed control back '
-                             'mid-block. Worth turning on only with a coverage report showing '
-                             'misses it would have caught.')
-    parser.add_argument('--title', default='ASTRAL CHAIN')
-    args = parser.parse_args()
-    source, output, build = args.export.resolve(), args.output.resolve(), args.build_dir.resolve()
-    if output == source or source in output.parents:
-        parser.error('Output must be separate from the original export')
-    if output.exists() and any(output.iterdir()):
-        parser.error('Output must be empty; use a new directory for each export')
-    if args.jobs < 1:
-        parser.error('--jobs must be positive')
-    manifest_path = source / 'aot_manifest.json'
-    if not manifest_path.exists():
-        manifest_path = source.parent / 'aot_manifest.json'
-    if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text())
-    else:
-        manifest = {'modules': [json.loads(p.read_text()) for p in sorted(source.glob('*/module.json'))]}
-    if not manifest['modules']:
-        parser.error('No module manifest or captured inputs found')
-    modules = {m['name']: m for m in manifest['modules']}
-    unknown = set(modules) - set(ORDER)
-    if unknown:
-        parser.error(f'Unsupported NSO module names: {unknown}')
-    ordered = [name for name in ORDER if name in modules]
-    coverage = {}
-    for report_path in args.coverage_report:
-        report = json.loads(report_path.read_text())
-        identities = {m['name']: m['sha256'] for m in report['modules']}
-        for site in report['fallback_sites']:
-            name = site['module']
-            if name not in modules:
-                continue
-            actual = [hashlib.sha256((source / name / 'data' / f'{segment}.bin').read_bytes()).hexdigest()
-                      for segment in ('text', 'rodata', 'data')]
-            if identities.get(name) != actual:
-                raise ValueError(f'Coverage report does not match module {name}')
-            coverage.setdefault(name, set()).add(site['offset'])
-    output.mkdir(parents=True, exist_ok=True)
-    generator = output / 'export_module'
-    run([os.environ.get('CXX', 'c++'), '-std=c++20', '-O2', '-I', REPO / 'src',
-         REPO / 'tools/aot/export_module.cpp', '-lcrypto', '-o', generator])
-    for name in ordered:
-        old = source / name
-        # Preserve every entry point previously discovered by the UI's symbol analysis.
-        roots, entry_pc = discover_roots(old, modules[name], args.unwind_roots)
-        roots.update(coverage.get(name, set()))
-        for unit in sorted((old / 'src').glob('*.c')):
-            roots.update(int(value, 16) for value in
-                         re.findall(r'\{0x([0-9a-fA-F]+)ULL,\s*blk_', unit.read_text()))
-        roots_file = output / f'{name}.roots'
-        roots_file.write_text('\n'.join(f'{value:x}' for value in sorted(roots)) + '\n')
-        old_export = old / 'recomp_export.c'
-        if old_export.exists():
-            entry = re.search(r'recomp_image_entry\(void\).*?return (0x[0-9a-fA-F]+)',
-                              old_export.read_text())
-            if entry:
-                entry_pc = int(entry.group(1), 16)
-        run([generator, name, old / 'data', output / name, modules[name]['text_vaddr'],
-             hex(entry_pc), roots_file, args.title])
-        identity = json.loads((output / name / 'recomp_identity.json').read_text())
-        modules[name]['segment_sha256'] = identity['sha256']
-    (output / 'recomp_registration.c').write_text(registration(ordered))
-    manifest.update(version=3, runtime_abi_version=identity['abi_version'], source_export=str(source),
-                    modules=[modules[name] for name in ordered])
-    (output / 'aot_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    launcher = output / 'play.sh'
-    command = [build / 'bin/suyu-cmd-static', '--user-dir', args.user_dir.resolve(),
-               '-g', args.rom.resolve()]
-    launcher.write_text('#!/bin/sh\nexec ' + shlex.join(map(str, command)) + ' "$@"\n')
-    launcher.chmod(0o755)
-    (output / 'build.sh').write_text('#!/bin/sh\nset -eu\n' +
-        shlex.join([args.cmake, '-S', str(REPO), '-B', str(build), '-DENABLE_QT=OFF',
-                    '-DVulkanHeaders_FORCE_BUNDLED=ON', '-DSUYU_CMD_RECOMP_DIR=' + str(output)]) + '\n' +
-        shlex.join([args.cmake, '--build', str(build), '--target', 'suyu-cmd-static', '-j', str(args.jobs)]) + '\n')
-    if not args.generate_only:
-        run(['sh', output / 'build.sh'])
-
-if __name__ == '__main__':
-    main()
