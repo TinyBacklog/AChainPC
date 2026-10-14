@@ -699,6 +699,12 @@ endif()
 
 add_subdirectory(runtime)
 
+option(ACRE_TESTS "Build lifter tests" ON)
+if (ACRE_TESTS)
+    enable_testing()
+    add_subdirectory(tools/tests)
+endif()
+
 if (ENABLE_DEBUG_TOOLS)
     add_subdirectory(tools/maxwell-disas)
     add_subdirectory(tools/maxwell-spirv)
