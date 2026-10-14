@@ -50,6 +50,7 @@
 #include "core/loader/loader.h"
 #include "core/perf_stats.h"
 #include "frontend_common/config.h"
+#include "frontend_common/content_manager.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
@@ -127,6 +128,8 @@ static void PrintHelp(const char* argv0) {
                  "    -F, --show-fps    Show the frame rate in the title bar and log it\n"
                  "    --user-dir=PATH   Isolated config, NAND, saves and logs (keys stay external)\n"
                  "    --dump-recomp-inputs=PATH  Dump effective NSO segments and exit before execution\n"
+                 "    --install=PATH    Install an NSP (update/DLC) into the profile NAND and exit\n"
+                 "    --keys-dir=PATH   Directory holding prod.keys (default: the suyu data dir)\n"
                  "    --recomp-strict   Stop with an error instead of falling back to JIT\n"
                  "    --recomp-stats=PATH  Write periodic and final execution reports as JSON\n"
                  "-m, --multiplayer=nick:password@address:port"
@@ -271,9 +274,27 @@ int main(int argc, char** argv) {
 
     // Resolve an explicit profile before logging, config or filesystem initialization.
     std::optional<std::filesystem::path> user_root;
+    std::optional<std::filesystem::path> keys_root;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
         if (arg == "--") break;
+        if (arg == "--keys-dir" || arg.starts_with("--keys-dir=")) {
+            const std::string value = arg == "--keys-dir"
+                ? (i + 1 < argc ? std::string{argv[++i]} : std::string{})
+                : std::string{arg.substr(11)};
+            if (value.empty()) {
+                std::cerr << "--keys-dir requires a non-empty path\n";
+                return 1;
+            }
+            keys_root = std::filesystem::absolute(value);
+            // SetSuyuPath ignores a directory that does not exist and the default
+            // keys would be used without a word, so check up front.
+            if (!std::filesystem::is_regular_file(*keys_root / "prod.keys")) {
+                std::cerr << "--keys-dir: no prod.keys in " << keys_root->string() << "\n";
+                return 1;
+            }
+            continue;
+        }
         if (arg == "--user-dir") {
             if (++i == argc || std::string_view{argv[i]}.empty()) {
                 std::cerr << "--user-dir requires a non-empty path\n";
@@ -335,6 +356,9 @@ int main(int argc, char** argv) {
         set_path(FS::SuyuPath::ThemesDir, "themes");
         FS::SetSuyuPath(FS::SuyuPath::KeysDir, keys);
       }
+      if (keys_root) {
+        Common::FS::SetSuyuPath(Common::FS::SuyuPath::KeysDir, *keys_root);
+      }
     };
     apply_user_root();
 
@@ -365,6 +389,7 @@ int main(int argc, char** argv) {
     bool recomp_strict = false;
     std::string recomp_report;
     std::string recomp_input_dump;
+    std::string install_path;
     int headless_timeout_seconds = 0;
     Service::AM::FrontendAppletParameters load_parameters{};
     std::string nickname{};
@@ -382,6 +407,8 @@ int main(int argc, char** argv) {
         {"recomp-strict", no_argument, 0, 'S'},
         {"recomp-stats", required_argument, 0, 'R'},
         {"dump-recomp-inputs", required_argument, 0, 'D'},
+        {"install", required_argument, 0, 'I'},
+        {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
         {"show-fps", no_argument, 0, 'F'},
         {"game", required_argument, 0, 'g'},
@@ -418,6 +445,8 @@ int main(int argc, char** argv) {
             case 'S': recomp_strict = true; break;
             case 'R': recomp_report = optarg; break;
             case 'D': recomp_input_dump = optarg; headless = true; break;
+            case 'I': install_path = optarg; break;
+            case 'K': break; // Applied before logging/config initialization.
             case 'T': {
                 const std::string_view value{optarg};
                 const auto parsed = std::from_chars(value.data(), value.data() + value.size(),
@@ -551,7 +580,7 @@ int main(int argc, char** argv) {
     Common::ConfigureNvidiaEnvironmentFlags();
 
     // Auto-detect ROM / exefs alongside the executable when no -g flag is given
-    if (filepath.empty() && !static_cast<u32>(load_parameters.applet_id)) {
+    if (install_path.empty() && filepath.empty() && !static_cast<u32>(load_parameters.applet_id)) {
 #ifdef _WIN32
         wchar_t exe_path_w[MAX_PATH];
         GetModuleFileNameW(nullptr, exe_path_w, MAX_PATH);
@@ -786,6 +815,33 @@ int main(int argc, char** argv) {
 #endif
     // Apply the command line arguments
     system.ApplySettings();
+
+    if (!install_path.empty()) {
+        // Scripted setup: put an update into this profile's NAND, then stop. Done
+        // before any window exists, so it needs neither SDL nor a GPU.
+        termination = "install_failed";
+        system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
+        system.SetFilesystem(std::make_shared<FileSys::RealVfsFilesystem>());
+        system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+        const auto result = ContentManager::InstallNSP(system, *system.GetFilesystem(), install_path,
+                                                       [](std::size_t, std::size_t) { return false; });
+        switch (result) {
+        case ContentManager::InstallResult::Success:
+        case ContentManager::InstallResult::Overwrite:
+            LOG_INFO(Frontend, "Installed '{}' ({})", install_path,
+                     result == ContentManager::InstallResult::Success ? "new" : "overwritten");
+            termination = "installed";
+            return 0;
+        case ContentManager::InstallResult::BaseInstallAttempted:
+            LOG_CRITICAL(Frontend, "'{}' is a base game; only updates and DLC are installed",
+                         install_path);
+            return 1;
+        case ContentManager::InstallResult::Failure:
+        default:
+            LOG_CRITICAL(Frontend, "Failed to install '{}' (missing or wrong keys?)", install_path);
+            return 1;
+        }
+    }
 
     // Two separate owning pointers rather than one std::unique_ptr<EmuWindow>:
     // Core::Frontend::EmuWindow's destructor is protected (only a concrete
