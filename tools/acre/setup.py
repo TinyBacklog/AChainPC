@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from . import config, identity
+from . import profile as profiles
 
 
 def check_keys(keys_dir: Path) -> None:
@@ -45,7 +46,9 @@ def run(base: Path, update: Path | None, keys_dir: Path, work: Path = config.WOR
 
     # The dump runs in a throwaway profile, so no stale mod can reach it. The play
     # profile holds the player's saves and is never wiped; it only gets the update.
-    profile, dump_profile = work / "profile", work / "setup-profile"
+    profile, dump_profile = config.play_profile(), work / "setup-profile"
+    if profiles.migrate(work / "profile", profile):
+        print(f"profile moved: {work / 'profile'} -> {profile}")
     inputs, tmp = work / "inputs", work / "inputs.tmp"
     stamp = time.strftime("%Y%m%d-%H%M%S")
     keys = f"--keys-dir={keys_dir}"

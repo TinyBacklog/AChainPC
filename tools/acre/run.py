@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
+from . import profile as profiles
 from .build import BINARY
 
 
@@ -64,7 +65,9 @@ def run(validate_run: bool = False, seconds: int = 180, extra: list[str] | None 
         work: Path = config.WORK) -> None:
     record = config.load(work)
     require_binary(BINARY)
-    command = [str(BINARY), f"--user-dir={record['profile']}", f"--keys-dir={record['keys_dir']}"]
+    play_profile, ini = profiles.prepare(record, work)
+    command = [str(BINARY), f"--user-dir={play_profile}", f"--keys-dir={record['keys_dir']}",
+               f"--ini={ini}"]
     if not validate_run:
         command += [*(extra or []), "-g", record["base"]]
         raise SystemExit(subprocess.run(command).returncode)

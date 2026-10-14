@@ -8,6 +8,7 @@ REPO = Path(__file__).resolve().parents[2]
 WORK = REPO / "work"
 VERSION_FILE = REPO / "game" / "version.json"
 FRONTEND = REPO / "build" / "bin" / "astralchain"
+INI_TEMPLATE = REPO / "frontend" / "astralchain.ini"
 
 EXIT_USAGE = 2
 EXIT_NO_KEYS = 10
@@ -23,6 +24,7 @@ EXIT_NO_COMPILER = 22
 EXIT_EXPORT_FAILED = 23
 EXIT_BUILD_FAILED = 24
 EXIT_VALIDATE_FAILED = 25
+EXIT_PROFILE_MIGRATION = 26
 
 
 def fail(code: int, message: str):
@@ -33,6 +35,19 @@ def fail(code: int, message: str):
 def default_keys_dir() -> Path:
     data = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
     return Path(data) / "suyu" / "keys"
+
+
+def _xdg(variable: str, fallback: str) -> Path:
+    return Path(os.environ.get(variable) or str(Path.home() / fallback))
+
+
+def play_profile() -> Path:
+    """NAND and saves of the game being played."""
+    return _xdg("XDG_DATA_HOME", ".local/share") / "astralchain" / "profile"
+
+
+def ini_path() -> Path:
+    return _xdg("XDG_CONFIG_HOME", ".config") / "astralchain" / "astralchain.ini"
 
 
 def save(work: Path, record: dict) -> None:

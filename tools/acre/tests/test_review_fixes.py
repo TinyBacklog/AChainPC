@@ -48,7 +48,9 @@ class SetupKeepsSavesTest(unittest.TestCase):
              mock.patch.object(identity, "load_expected",
                                return_value={"version": "1.0.1", "modules": {"main": []}}):
             setup.run(base, None, keys, work=work, frontend=frontend)
-        self.assertEqual(save.read_text(), "progress")
+        moved = config.play_profile() / "nand" / "user" / "save" / "slot0"
+        self.assertEqual(moved.read_text(), "progress")
+        self.assertTrue(str(config.play_profile()).startswith(os.environ["XDG_DATA_HOME"]))
 
 
 class ExtraModuleTest(unittest.TestCase):
