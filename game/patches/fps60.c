@@ -25,6 +25,10 @@
 
 extern uint64_t g_module_base_main;
 
+// Called by the lifted code; it declares them itself at each call site.
+int acre_fps60_first_sample(GuestContext* c);
+int acre_fps60_step(GuestContext* c);
+
 static uint32_t load32(GuestContext* c, uint64_t va) {
     return (uint32_t)c->host_mem->load(c->host_mem->user, va, 4);
 }
