@@ -4715,6 +4715,43 @@ static uint8_t* _recomp_fastptr(GuestContext* c, uint64_t a, uint32_t sz){
   return (uint8_t*)(p + (uintptr_t)va);
 }
 
+#ifdef RECOMP_MEMSTATS
+/* Measurement build only (-DRECOMP_MEMSTATS): per-thread counts of guest
+   accesses by width and of why an access missed the fast path, printed to
+   stderr every 2^27 accesses. The default build has none of this. */
+#include <stdio.h>
+static _Thread_local struct {
+  uint64_t load[9], store[9], total;
+  uint64_t slow_cross, slow_range, slow_entry, slow_nohost;
+} _ms;
+static void _ms_count(int store, uint32_t sz, const GuestContext* c, uint64_t a, int fast){
+  if(store) _ms.store[sz]++; else _ms.load[sz]++;
+  if(!fast){
+    const RecompHostMem* h = c->host_mem;
+    uint64_t va = a & 0xFFFFFFFFFFFFULL;
+    if(!h || !h->page_table || !h->address_space_size) _ms.slow_nohost++;
+    else if(va + sz > h->address_space_size || va + sz < va) _ms.slow_range++;
+    else if((va & 0xFFF) + sz > 0x1000) _ms.slow_cross++;
+    else _ms.slow_entry++;
+  }
+  if((++_ms.total & ((1ULL << 27) - 1)) == 0){
+    fprintf(stderr, "[memstats %p] total=%llu ld8=%llu ld16=%llu ld32=%llu ld64=%llu "
+            "st8=%llu st16=%llu st32=%llu st64=%llu slow_entry=%llu slow_cross=%llu "
+            "slow_range=%llu slow_nohost=%llu\n", (void*)&_ms,
+            (unsigned long long)_ms.total,
+            (unsigned long long)_ms.load[1], (unsigned long long)_ms.load[2],
+            (unsigned long long)_ms.load[4], (unsigned long long)_ms.load[8],
+            (unsigned long long)_ms.store[1], (unsigned long long)_ms.store[2],
+            (unsigned long long)_ms.store[4], (unsigned long long)_ms.store[8],
+            (unsigned long long)_ms.slow_entry, (unsigned long long)_ms.slow_cross,
+            (unsigned long long)_ms.slow_range, (unsigned long long)_ms.slow_nohost);
+  }
+}
+#define RECOMP_MS(store, sz, fast) _ms_count(store, sz, c, a, fast)
+#else
+#define RECOMP_MS(store, sz, fast) ((void)0)
+#endif
+
 static uint64_t memload(GuestContext* c, uint64_t a, uint32_t sz){
   if(c->host_mem){
     const RecompHostMem* h = c->host_mem;
@@ -4726,6 +4763,7 @@ static uint64_t memload(GuestContext* c, uint64_t a, uint32_t sz){
       (void)_discard;
     }
     fp = _recomp_fastptr(c,a,sz);
+    RECOMP_MS(0, sz, fp != 0);
     if(fp){ uint64_t v=0; memcpy(&v,fp,sz); return v; }
     return h->load(h->user,a,sz);
   }
@@ -4735,6 +4773,7 @@ static void memstore(GuestContext* c, uint64_t a, uint32_t sz, uint64_t v){
   if(c->host_mem){
     const RecompHostMem* h = c->host_mem;
     uint8_t* fp = _recomp_fastptr(c,a,sz);
+    RECOMP_MS(1, sz, fp != 0);
     if(fp){ memcpy(fp,&v,sz); return; }
     h->store(h->user,a,sz,v);
     return;
