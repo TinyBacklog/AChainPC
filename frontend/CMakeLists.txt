@@ -145,6 +145,13 @@ if (SUYU_CMD OR YUZU_CMD)
             target_compile_definitions(astralchain-static PRIVATE SUYU_CMD_STATIC_RECOMP=1)
             target_include_directories(astralchain-static PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
             target_link_libraries(astralchain-static PRIVATE ${_recomp_libs})
+            # Game patch hooks (C) called from the lifted main module; they need
+            # that module's generated runtime header.
+            if (TARGET recomp_static_main)
+                add_library(acre_game_hooks STATIC ${PROJECT_SOURCE_DIR}/game/patches/fps60.c)
+                target_link_libraries(acre_game_hooks PRIVATE recomp_static_main m)
+                target_link_libraries(astralchain-static PRIVATE acre_game_hooks)
+            endif()
             list(APPEND SUYU_CMD_TARGETS astralchain-static)
         else()
             message(WARNING "ASTRALCHAIN_RECOMP_DIR set but no recompiled modules found in it")

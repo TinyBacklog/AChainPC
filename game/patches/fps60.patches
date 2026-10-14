@@ -1,0 +1,17 @@
+# 60fps for Astral Chain 1.0.1, active when acre_fps60 is set (astralchain.ini: fps60).
+# MODULE OFFSET KIND EXPECTED REPLACEMENT|HOOK ; what the replacement is
+# Words were produced and checked with game/patches/encode.sh.
+
+# Present interval: the game maps mode 0 -> 1 and mode 1 (its 30fps default) -> 2.
+main 0x9E8D84 word 0x1A9F1501 0x52800021 ; startup: csinc w1,w8,wzr,ne -> mov w1,#1
+main 0x9DB6BC word 0x1A9F1521 0x52800021 ; run time: csinc w1,w9,wzr,ne -> mov w1,#1
+
+# Frame timer (object in x19): measured step, also during cutscenes. See fps60.c.
+main 0x91DBDC hook 0xB40006C8 acre_fps60_first_sample ; cbz x8,0x91DCB4
+main 0x91DC10 hook 0x340001D5 acre_fps60_step          ; cbz w21,0x91DC48
+
+# Integer counters fed by the step read whole ticks (timer +0xD8) instead, so a
+# step of 0.5 does not stall them.
+main 0x48BE14 word 0x1E380008 0xB940D908 ; fcvtzs w8,s0 -> ldr w8,[x8,#0xd8]
+main 0x57E7DC word 0xBD40D300 0xB940DB08 ; ldr s0,[x24,#0xd0] -> ldr w8,[x24,#0xd8]
+main 0x57E7E0 word 0x1E390008 0x34000188 ; fcvtzu w8,s0 -> cbz w8,0x57E810

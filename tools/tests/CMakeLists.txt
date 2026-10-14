@@ -34,6 +34,16 @@ foreach(t IN LISTS _lifter_tests)
     set_tests_properties(lifter_${t} PROPERTIES LABELS lifter TIMEOUT 600)
 endforeach()
 
+# 60fps hooks (game/patches/fps60.c) against the generated runtime header.
+acre_lifter_executable(lifter_gen_fps60 test_fps60.cpp)
+add_test(NAME lifter_fps60
+         COMMAND ${CMAKE_COMMAND}
+                 -DGEN=$<TARGET_FILE:lifter_gen_fps60> -DCC=${CMAKE_C_COMPILER}
+                 -DOUT_DIR=${_lifter_out} -DNAME=fps60_hooks
+                 "-DLIBS=-I${PROJECT_SOURCE_DIR}/game/patches;-lm"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/run_lifter_test.cmake)
+set_tests_properties(lifter_fps60 PROPERTIES LABELS lifter TIMEOUT 600)
+
 acre_lifter_executable(lifter_exclusive test_exclusive.cpp)
 add_test(NAME lifter_exclusive COMMAND lifter_exclusive)
 set_tests_properties(lifter_exclusive PROPERTIES LABELS lifter)
