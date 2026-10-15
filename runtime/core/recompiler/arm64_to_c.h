@@ -3779,6 +3779,40 @@ struct RecompileStats {
 // title emits hundreds of them, and loose in the root they bury the four files
 // anyone actually needs to look at.
 // Optional rodata/data parameters bundle those segments so the exported exe is self-contained.
+// Per-core cache of indirect-branch targets, kept inside GuestContext and
+// shared by the chained indirect branches and the emulator's dispatcher.
+//
+// recomp_lookup is three dependent loads into tables of several megabytes, and
+// in combat it was 4% of all samples with most of that waiting on the last two
+// cache misses. The targets of indirect branches in a frame are a small, hot
+// set, so a direct-mapped cache keyed by the absolute PC answers most of them
+// with one load from a 16 KiB array that stays in L1/L2. Entries are never
+// invalidated: the recompiled image is fixed for the life of the process and a
+// PC always maps to the same block. A hit may be a block of another module,
+// which is safe to call - each block reaches only its own module's globals -
+// and saves the trip to the dispatcher the module's own table would have taken.
+// Shared as text so the lifter tests compile exactly what the runtime does.
+#define ACRE_BLOCK_CACHE_TYPES_C R"C(/* Indirect-branch target cache; see recomp_chain_lookup. A zero entry is
+   empty: no block starts at guest address 0. */
+#define RECOMP_BLOCK_CACHE 1024u
+struct GuestContext;
+typedef struct RecompBlockCacheEntry {
+    uint64_t pc;
+    void (*fn)(struct GuestContext*);
+} RecompBlockCacheEntry;
+)C"
+#define ACRE_BLOCK_CACHE_LOOKUP_C R"C(/* Block for the indirect-branch target in c->pc, or 0 if this module has
+   none. Misses fall through to the module's own table and are remembered. */
+static inline BlockFn recomp_chain_lookup(GuestContext* c){
+  RecompBlockCacheEntry* e = &c->block_cache[(c->pc >> 2) & (RECOMP_BLOCK_CACHE - 1u)];
+  BlockFn f;
+  if (e->pc == c->pc && e->fn) return e->fn;
+  f = recomp_lookup(c->pc - g_module_base);
+  if (f) { e->pc = c->pc; e->fn = f; }
+  return f;
+}
+)C"
+
 // Liga um bloco diretamente ao seu sucessor quando o sucessor e conhecido.
 //
 // Cada bloco terminava a escrever o PC e a voltar ao despachante, que procurava
@@ -3796,16 +3830,15 @@ struct RecompileStats {
 // O PC e escrito na mesma antes do salto, para que o caminho em que o orcamento
 // se esgota deixe o estado exatamente como o despachante espera.
 //
-// Indirect branches (RET, BR, BLR) chain too, through the module's own block
-// table: recomp_lookup is a direct index, so a hit costs one bounds check and
-// two loads, and a target outside the module (another module, or an address
-// below the base, which wraps) misses and goes back to the dispatcher as
-// before. Those branches were most of the remaining trips to the dispatcher,
+// Indirect branches (RET, BR, BLR) chain too, through recomp_chain_lookup: the
+// per-core target cache first, then the module's own block table, where a
+// target outside the module (another module, or an address below the base,
+// which wraps) misses and goes back to the dispatcher as before. Those branches were most of the remaining trips to the dispatcher,
 // and each trip costs its checks and the cross-module search. Same budget.
 inline std::string ChainIndirect(std::string body) {
     for (const char* tag : {"RET", "BR", "BLR"}) {
         const std::string from = std::string("return; /* ") + tag + " */";
-        const std::string to = std::string("if(--c->chain_budget>0){ BlockFn _f=recomp_lookup(c->pc-g_module_base); "
+        const std::string to = std::string("if(--c->chain_budget>0){ BlockFn _f=recomp_chain_lookup(c); "
                                            "if(_f){ _f(c); return; } } return; /* ") + tag + " */";
         for (size_t at = body.find(from); at != std::string::npos; at = body.find(from, at + to.size())) {
             body.replace(at, from.size(), to);
@@ -4482,6 +4515,7 @@ inline const char* RuntimeH() {
 #include <stdint.h>
 #include <stddef.h>   /* offsetof, for the layout assertions below */
 #include <string.h>   /* memcpy, para o caminho rapido de memoria abaixo */
+)RT" ACRE_BLOCK_CACHE_TYPES_C R"RT(
 
 /* Supplied by the host when the recompiled image is driven by an emulator
    rather than run standalone. `size` is 1, 2, 4 or 8 bytes. */
@@ -4552,6 +4586,9 @@ typedef struct GuestContext {
        turns the fast path off and every access takes the full-check path. */
     const uint8_t* fm_table;
     uint64_t fm_limit;
+    /* Indirect-branch target cache, owned by whoever drives the code; zeroed
+       is empty. See recomp_chain_lookup. */
+    RecompBlockCacheEntry block_cache[RECOMP_BLOCK_CACHE];
     /* Save-data filesystem state */
     char save_dir[512];
     /* Heap break for SVC memory allocation */
@@ -4584,6 +4621,7 @@ typedef char recomp_layout_tpidrro[offsetof(GuestContext, tpidrro_el0) == 840 ? 
 typedef char recomp_layout_chain[offsetof(GuestContext, chain_budget) == 848 ? 1 : -1];
 typedef char recomp_layout_fmtable[offsetof(GuestContext, fm_table) == 856 ? 1 : -1];
 typedef char recomp_layout_fmlimit[offsetof(GuestContext, fm_limit) == 864 ? 1 : -1];
+typedef char recomp_layout_bcache[offsetof(GuestContext, block_cache) == 872 && sizeof(RecompBlockCacheEntry) == 16 ? 1 : -1];
 
 /* Where this module is actually loaded in the guest's address space.
    Every address the static pass bakes in - ADR/ADRP results, branch targets,
@@ -4597,7 +4635,7 @@ extern uint64_t g_module_base;
 
 typedef void (*BlockFn)(GuestContext*);
 BlockFn recomp_lookup(uint64_t pc); void recomp_run(GuestContext* c);
-/* Bandeiras e condicoes, definidas aqui em vez de no runtime.
+)RT" ACRE_BLOCK_CACHE_LOOKUP_C R"RT(/* Bandeiras e condicoes, definidas aqui em vez de no runtime.
  *
  * Sao 113 336 e 131 214 sitios de chamada so no main. Enquanto viviam noutra
  * unidade de traducao, cada um custava uma chamada - e, pior, obrigava o

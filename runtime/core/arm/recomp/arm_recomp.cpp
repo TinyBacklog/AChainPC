@@ -97,6 +97,15 @@ struct GuestContextView {
     // recomp_load32 in core/recompiler/arm64_to_c.h.
     const u8* fm_table;
     u64 fm_limit;
+    // Indirect-branch target cache shared with the recompiled code, which
+    // fills it from its chained indirect branches; the dispatcher reads and
+    // fills it too. See recomp_chain_lookup in core/recompiler/arm64_to_c.h.
+    struct BlockCacheEntry {
+        u64 pc;
+        RecompBlockFn fn;
+    };
+    static constexpr size_t kBlockCacheSize = 1024;
+    BlockCacheEntry block_cache[kBlockCacheSize];
 };
 
 // Matches RecompHostMem in the generated runtime. The recompiled code calls
@@ -130,6 +139,8 @@ static_assert(offsetof(GuestContextView, tpidrro_el0) == 840);
 static_assert(offsetof(GuestContextView, chain_budget) == 848);
 static_assert(offsetof(GuestContextView, fm_table) == 856);
 static_assert(offsetof(GuestContextView, fm_limit) == 864);
+static_assert(offsetof(GuestContextView, block_cache) == 872);
+static_assert(sizeof(GuestContextView::BlockCacheEntry) == 16);
 
 // A block that ends in a known successor calls it directly instead of coming
 // back here, so this bounds how long the recompiled code may run before the
@@ -237,6 +248,15 @@ struct ArmRecomp::Impl {
         if (!self.exclusive_monitor) return false;
         return ExecuteRecompExclusive(*self.exclusive_monitor, self.core_index,
                                        self.ctx.x, instruction);
+    }
+
+    /// The block for `pc`, through the target cache the recompiled code shares.
+    RecompBlockFn Lookup(u64 pc) {
+        auto& entry = ctx.block_cache[(pc >> 2) & (GuestContextView::kBlockCacheSize - 1)];
+        if (entry.pc == pc && entry.fn) return entry.fn;
+        const RecompBlockFn fn = lookup(pc);
+        if (fn) entry = {pc, fn};
+        return fn;
     }
 
     /// Base address of the module containing `pc`, so an address can be turned
@@ -794,7 +814,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
 
         const bool prof = g_dispatch_profile.on;
         const unsigned long long t_loop = prof ? __rdtsc() : 0;
-        RecompBlockFn block = impl->lookup(impl->ctx.pc);
+        RecompBlockFn block = impl->Lookup(impl->ctx.pc);
         const unsigned long long t_lookup = prof ? __rdtsc() : 0;
         // Test hook: forces every lookup past the Nth to miss, so the JIT
         // fallback below can be exercised on a title that would otherwise never

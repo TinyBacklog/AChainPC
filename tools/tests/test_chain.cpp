@@ -80,7 +80,7 @@ int main() {
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-typedef struct GuestContext {
+)C" << ACRE_BLOCK_CACHE_TYPES_C << R"C(typedef struct GuestContext {
     uint64_t x[32];
     uint64_t pc;
     uint8_t n,z,c,v;
@@ -88,6 +88,7 @@ typedef struct GuestContext {
     uint64_t vreg[32][2];
     uint64_t pending_svc;
     int32_t chain_budget;
+    RecompBlockCacheEntry block_cache[RECOMP_BLOCK_CACHE];
 } GuestContext;
 uint64_t g_module_base = 0;
 /* The module's own block lookup, which the rewrite calls for indirect
@@ -101,7 +102,7 @@ BlockFn recomp_lookup(uint64_t pc){
     if (pc % 4 || pc / 4 >= g_lookup_n) return 0;
     return g_lookup[pc / 4];
 }
-/* Counts calls rather than servicing them: what matters is that chaining does
+)C" << ACRE_BLOCK_CACHE_LOOKUP_C << R"C(/* Counts calls rather than servicing them: what matters is that chaining does
    not skip the system call, which is exactly what it did before the terminator
    was required to be the last thing in the block. */
 static int g_svc_calls = 0;
@@ -346,6 +347,31 @@ int main(void) {
         }
         if (budgets[t] == 1 && dtrial != dref) {
             printf("FAIL: budget 1 still chained an indirect branch (%d vs %d)\n", dtrial, dref);
+            return 1;
+        }
+        ++checks;
+    }
+    /* The target cache: a second run of the same calls finds the BLR and RET
+       targets without asking the module's table again. Only the BR that
+       leaves the module still asks - a miss is not remembered. Its target,
+       0x10014, shares a cache slot with the BLR target 0x14, so a cache that
+       did not compare the PC would run the wrong block. */
+    {
+        GuestContext c;
+        int run, d;
+        memset(&c, 0, sizeof c);
+        for (run = 0; run < 2; ++run) {
+            c.pc = 0; c.x[0] = 5; c.x[6] = 0x14; c.x[30] = 0x10014;
+            g_lookups = 0;
+            d = drive_calls(&c, callchains, 1000);
+            if (d != 1 || c.x[0] != 8 || c.pc != 0x10014) {
+                printf("FAIL: cached run %d changed the result (x0=%llu pc=%llx)\n",
+                       run, (unsigned long long)c.x[0], (unsigned long long)c.pc);
+                return 1;
+            }
+        }
+        if (g_lookups != 1) {
+            printf("FAIL: second run asked the table %d times; cached targets should need 1\n", g_lookups);
             return 1;
         }
         ++checks;
