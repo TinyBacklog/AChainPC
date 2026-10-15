@@ -38,6 +38,9 @@ public:
     /// Returns if window is shown (not minimized)
     bool IsShown() const override;
 
+    /// Advances a TAS script or recording (frontend/acre_tas.h) by one frame.
+    void OnFrameDisplayed() override;
+
     /// Wait for the next event on the main thread.
     void WaitEvent();
 

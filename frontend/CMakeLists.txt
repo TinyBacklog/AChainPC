@@ -34,6 +34,8 @@ if (SUYU_CMD OR YUZU_CMD)
         acre_ini.h
         acre_ini_apply.cpp
         acre_ini_apply.h
+        acre_tas.cpp
+        acre_tas.h
         sdl_config.cpp
         sdl_config.h
         suyu.cpp

@@ -6,6 +6,7 @@
     acre.py build
     acre.py run [--validate [--seconds N]]
     acre.py roots --from REPORT.json
+    acre.py bench --script TAS.txt --binary A [--binary B] [--runs N]
 """
 import argparse
 import sys
@@ -39,6 +40,18 @@ def main(argv=None) -> int:
     p = commands.add_parser("roots", help="add a run's fallback sites to game/roots")
     p.add_argument("--from", dest="report", type=Path, required=True, help="report JSON of a run")
 
+    p = commands.add_parser("bench", help="A/B builds by replaying a TAS script from a profile snapshot")
+    p.add_argument("--script", type=Path, required=True, help="TAS script recorded with --tas-record")
+    p.add_argument("--binary", type=Path, action="append", required=True,
+                   help="astralchain-static to measure; repeat to compare")
+    p.add_argument("--runs", type=int, default=3, help="runs per binary (default: %(default)s)")
+    p.add_argument("--profile", type=Path, default=config.WORK / "bench" / "snapshot",
+                   help="profile copied fresh for every run (default: %(default)s)")
+    p.add_argument("--ini", type=Path, default=config.WORK / "bench" / "bench.ini",
+                   help="astralchain.ini for the runs (default: %(default)s)")
+    p.add_argument("--settle", type=int, default=10, help="seconds after the script before measuring")
+    p.add_argument("--seconds", type=int, default=40, help="measurement window (default: %(default)s)")
+
     args = parser.parse_args(argv)
     if args.command == "setup":
         from acre import setup
@@ -58,6 +71,9 @@ def main(argv=None) -> int:
     elif args.command == "roots":
         from acre import coverage
         coverage.run(args.report)
+    elif args.command == "bench":
+        from acre import bench
+        bench.run(args.binary, args.script, args.runs, args.profile, args.ini, args.settle, args.seconds)
     return 0
 
 

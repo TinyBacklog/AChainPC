@@ -20,6 +20,7 @@ static constexpr Uint8 SDL_RELEASED = 0;
 #include "common/param_package.h"
 #include "common/settings_input.h"
 #include "frontend/acre_ini_apply.h"
+#include "frontend/acre_tas.h"
 #include "frontend/emu_window/emu_window_sdl2.h"
 #include "suyu_cmd/suyu_icon.h"
 
@@ -574,6 +575,10 @@ void EmuWindow_SDL2::OnKeyEvent(int key, u8 state) {
 
 bool EmuWindow_SDL2::IsOpen() const {
     return is_open;
+}
+
+void EmuWindow_SDL2::OnFrameDisplayed() {
+    AcreTasFrame();
 }
 
 bool EmuWindow_SDL2::IsShown() const {

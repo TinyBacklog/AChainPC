@@ -52,6 +52,7 @@
 #include "frontend_common/config.h"
 #include "frontend_common/content_manager.h"
 #include "frontend/acre_ini_apply.h"
+#include "frontend/acre_tas.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
@@ -126,6 +127,9 @@ static void PrintHelp(const char* argv0) {
                  "    --headless-timeout=N  With --headless, exit after N seconds if the game\n"
                  "                      hasn't already requested shutdown (0 = run until\n"
                  "                      Ctrl+C or the game exits; this is the default)\n"
+                 "    --exit-after=N    Exit after N seconds, with or without a window\n"
+                 "    --tas-play        Play <user dir>/tas/script0-1.txt on player 1 (TAS-nx)\n"
+                 "    --tas-record      Record player 1 into <user dir>/tas/script0-1.txt\n"
                  "    -F, --show-fps    Show the frame rate in the title bar and log it\n"
                  "    --user-dir=PATH   Isolated config, NAND, saves and logs (keys stay external)\n"
                  "    --dump-recomp-inputs=PATH  Dump effective NSO segments and exit before execution\n"
@@ -405,6 +409,8 @@ int main(int argc, char** argv) {
     std::string install_path;
     std::optional<std::filesystem::path> ini_path;
     int headless_timeout_seconds = 0;
+    int exit_after_seconds = 0;
+    AcreTasMode tas_mode = AcreTasMode::Off;
     Service::AM::FrontendAppletParameters load_parameters{};
     std::string nickname{};
     std::string password{};
@@ -426,6 +432,9 @@ int main(int argc, char** argv) {
         {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
         {"show-fps", no_argument, 0, 'F'},
+        {"exit-after", required_argument, 0, 'E'},
+        {"tas-play", no_argument, 0, 'P'},
+        {"tas-record", no_argument, 0, 'W'},
         {"game", required_argument, 0, 'g'},
         {"applet-params", optional_argument, 0, 'l'},
         {"multiplayer", required_argument, 0, 'm'},
@@ -474,6 +483,19 @@ int main(int argc, char** argv) {
                 }
                 break;
             }
+            case 'E': {
+                const std::string_view value{optarg};
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(),
+                                                    exit_after_seconds);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                    exit_after_seconds <= 0) {
+                    std::cerr << "--exit-after requires a positive integer\n";
+                    return 1;
+                }
+                break;
+            }
+            case 'P': tas_mode = AcreTasMode::Play; break;
+            case 'W': tas_mode = AcreTasMode::Record; break;
             case 'g': {
                 const std::string str_arg(optarg);
                 filepath = str_arg;
@@ -572,6 +594,8 @@ int main(int argc, char** argv) {
         // the file really does bring the defaults back.
         ApplyAcreIni(AcreIni{});
     }
+    // Before the window: it starts the input subsystem, which reads the TAS settings.
+    AcreTasConfigure(tas_mode);
 
     // apply the log_filter setting
     // the logger was initialized before and doesn't pick up the filter on its own
@@ -893,6 +917,7 @@ int main(int argc, char** argv) {
         }
         emu_window = sdl_window.get();
     }
+    AcreTasStart(input_subsystem, system);
 
 #ifdef _WIN32
     Common::Windows::SetCurrentTimerResolutionToMaximum();
@@ -1043,9 +1068,11 @@ int main(int argc, char** argv) {
         Core::RecompFail("frontend_process_start_timeout");
     }
     if (system.DebuggerEnabled()) system.InitializeDebugger();
-    const auto deadline = headless && headless_timeout_seconds > 0
-        ? std::optional{std::chrono::steady_clock::now() +
-                        std::chrono::seconds(headless_timeout_seconds)} : std::nullopt;
+    const int timeout_seconds = exit_after_seconds > 0 ? exit_after_seconds
+                                : headless ? headless_timeout_seconds : 0;
+    const auto deadline = timeout_seconds > 0
+        ? std::optional{std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds)}
+        : std::nullopt;
     auto next_report = std::chrono::steady_clock::now();
     while (!guest_exit.load() && !g_headless_interrupted && !Core::RecompHasFailure() &&
            (headless || sdl_window->IsOpen())) {
@@ -1067,6 +1094,7 @@ int main(int argc, char** argv) {
     else if (g_headless_interrupted) termination = "signal";
     else if (termination == "running") termination = guest_exit ? "guest_exit" : "window_closed";
     LOG_INFO(Frontend, "Execution ended: {}", termination);
+    AcreTasFinish();
     system.DetachDebugger();
     void(system.Pause());
     system.ShutdownMainProcess();
