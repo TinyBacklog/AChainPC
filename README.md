@@ -25,8 +25,10 @@ See `docs/superpowers/specs/2026-10-14-astralchainre-design.md` for the design a
 
 ## Requirements
 
-- Linux x86_64
-- GCC 16 or clang 22
+- Linux x86_64 on an x86-64-v3 CPU (AVX2 and FMA; any Ryzen, Intel since Haswell). The
+  lifted guest code is built for that level; configure with `-DACRE_RECOMP_ARCH=x86-64`
+  for an older CPU, at a cost in speed.
+- clang 22 for the lifted C (`acre.py build` uses it) and GCC 16 or clang 22 for C++
 - CMake ≥ 3.22 and Ninja
 - SDL3, Vulkan loader, FFmpeg, Boost, OpenSSL (`openssl-devel` is also needed by the
   lifter tests)
@@ -36,7 +38,8 @@ Other dependencies are fetched by CPM at configure time. Their cache lives in `.
 ## Build
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVulkanHeaders_FORCE_BUNDLED=ON
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVulkanHeaders_FORCE_BUNDLED=ON \
+      -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=c++
 cmake --build build
 ```
 

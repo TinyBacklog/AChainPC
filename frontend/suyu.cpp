@@ -272,6 +272,16 @@ int main(int argc, char** argv) {
         freopen("CONOUT$", "wb", stderr);
     }
 #endif
+#if defined(SUYU_CMD_STATIC_RECOMP) && defined(ACRE_RECOMP_CPU_LEVEL)
+    // The lifted guest code is compiled for this x86-64 level (ACRE_RECOMP_ARCH).
+    // On an older CPU its first AVX2 or FMA instruction would end the process
+    // with SIGILL, so say what is missing instead.
+    if (!__builtin_cpu_supports(ACRE_RECOMP_CPU_LEVEL)) {
+        std::cerr << "This build needs an " ACRE_RECOMP_CPU_LEVEL " CPU. "
+                     "Rebuild with -DACRE_RECOMP_ARCH=x86-64 to run on this one.\n";
+        return 1;
+    }
+#endif
 
     try {
 

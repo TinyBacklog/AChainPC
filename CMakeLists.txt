@@ -697,6 +697,15 @@ if (MSVC AND CXX_CLANG)
     link_libraries(llvm-mingw-runtime)
 endif()
 
+# Compile options for the lifted guest code and the game hooks. x86-64-v3 (AVX2,
+# FMA, BMI2) turns the lifter's fma()/fmaf() calls, one per fused AArch64
+# multiply-add, into single instructions; in game it raised a CPU-bound scene
+# from 24 to 33 fps. -ffp-contract=off is a correctness rule, not a tuning
+# knob: with FMA available the compiler would otherwise fuse a separate
+# multiply and add into one rounding, which AArch64 FMUL+FADD do not do.
+set(ACRE_RECOMP_ARCH "x86-64-v3" CACHE STRING "-march for the lifted guest code (needs a CPU that supports it)")
+set(ACRE_RECOMP_C_FLAGS "-march=${ACRE_RECOMP_ARCH}" "-ffp-contract=off")
+
 add_subdirectory(runtime)
 add_subdirectory(recompiler)
 

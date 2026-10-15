@@ -47,7 +47,7 @@ struct DispatchProfile {
         if (!n) return;
         const double total = (double)(l + b);
         fprintf(stderr, "[recomp] blocos/s=%llu  procura=%.1f%%  bloco=%.1f%%  ciclos/bloco=%.1f\n",
-                n / 2, 100.0 * l / total, 100.0 * b / total, total / (double)n);
+                n / 2, 100.0 * (double)l / total, 100.0 * (double)b / total, total / (double)n);
     }
 };
 DispatchProfile g_dispatch_profile;

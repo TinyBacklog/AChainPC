@@ -9,7 +9,14 @@ if (NOT OpenSSL_Crypto_FOUND)
                         "Install it or configure with -DACRE_TESTS=OFF.")
 endif()
 
-set(_lifter_tests adc bitfields extract fp simd crc32 recip aes sha1 sha256 satsimd chain patch fmlite fmlite_inline)
+# The game build compiles the lifted C with clang (see tools/acre/build.py), so
+# the tests should too; GCC works but is not what ships.
+if (NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    message(WARNING "Lifter tests compile generated C with ${CMAKE_C_COMPILER_ID}; "
+                    "the game build uses clang. Configure with -DCMAKE_C_COMPILER=clang.")
+endif()
+
+set(_lifter_tests adc bitfields extract fp fpcontract simd crc32 recip aes sha1 sha256 satsimd chain patch fmlite fmlite_inline)
 set(_lifter_out "${CMAKE_CURRENT_BINARY_DIR}/out")
 file(MAKE_DIRECTORY "${_lifter_out}")
 
@@ -27,7 +34,7 @@ foreach(t IN LISTS _lifter_tests)
     acre_lifter_executable(lifter_gen_${t} test_${t}.cpp)
     add_test(NAME lifter_${t}
              COMMAND ${CMAKE_COMMAND}
-                     -DGEN=$<TARGET_FILE:lifter_gen_${t}> -DCC=${CMAKE_C_COMPILER}
+                     -DGEN=$<TARGET_FILE:lifter_gen_${t}> -DCC=${CMAKE_C_COMPILER} "-DCFLAGS=${ACRE_RECOMP_C_FLAGS}"
                      -DOUT_DIR=${_lifter_out} -DNAME=${t}
                      "-DLIBS=-I${OPENSSL_INCLUDE_DIR};${OPENSSL_CRYPTO_LIBRARY};-lm"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/run_lifter_test.cmake)
@@ -38,7 +45,7 @@ endforeach()
 acre_lifter_executable(lifter_gen_fps60 test_fps60.cpp)
 add_test(NAME lifter_fps60
          COMMAND ${CMAKE_COMMAND}
-                 -DGEN=$<TARGET_FILE:lifter_gen_fps60> -DCC=${CMAKE_C_COMPILER}
+                 -DGEN=$<TARGET_FILE:lifter_gen_fps60> -DCC=${CMAKE_C_COMPILER} "-DCFLAGS=${ACRE_RECOMP_C_FLAGS}"
                  -DOUT_DIR=${_lifter_out} -DNAME=fps60_hooks
                  "-DLIBS=-I${PROJECT_SOURCE_DIR}/game/patches;-lm"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/run_lifter_test.cmake)
