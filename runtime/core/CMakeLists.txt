@@ -11,6 +11,9 @@ add_library(core STATIC
     arm/recomp/arm_recomp.h
     arm/recomp/recomp_diagnostics.cpp
     arm/recomp/recomp_diagnostics.h
+    arm/recomp/recomp_fastmem.cpp
+    arm/recomp/recomp_fastmem.h
+    arm/recomp/recomp_fastmem_access.h
     arm/recomp/recomp_memstats.h
     arm/debug.cpp
     arm/debug.h

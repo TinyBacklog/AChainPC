@@ -23,6 +23,7 @@
 #include "common/common_types.h"
 
 #include "dynarmic/backend/exception_handler.h"
+#include "dynarmic/interface/signal_handler.h"
 
 #if defined(ARCHITECTURE_x86_64)
 
@@ -195,6 +196,19 @@ void RegisterHandler() {
 }
 
 }  // anonymous namespace
+
+}  // namespace Dynarmic::Backend
+
+namespace Dynarmic {
+
+bool InstallFaultHandler() {
+    Backend::RegisterHandler();
+    return true;
+}
+
+}  // namespace Dynarmic
+
+namespace Dynarmic::Backend {
 
 mig_external kern_return_t catch_mach_exception_raise(mach_port_t, mach_port_t, mach_port_t, exception_type_t, mach_exception_data_t, mach_msg_type_number_t) {
     fmt::print(stderr, "dynarmic: Unexpected mach message: mach_exception_raise\n");

@@ -19,6 +19,17 @@
 #include "dynarmic/backend/exception_handler.h"
 #include "dynarmic/backend/x64/block_of_code.h"
 #include "dynarmic/common/safe_ops.h"
+#include "dynarmic/interface/signal_handler.h"
+
+namespace Dynarmic {
+
+// Windows uses table-based unwinding per code block; there is no process-wide
+// handler to install ahead of time.
+bool InstallFaultHandler() {
+    return false;
+}
+
+}  // namespace Dynarmic
 
 using UBYTE = u8;
 

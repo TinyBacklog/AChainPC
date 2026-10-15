@@ -7,6 +7,15 @@
  */
 
 #include "dynarmic/backend/exception_handler.h"
+#include "dynarmic/interface/signal_handler.h"
+
+namespace Dynarmic {
+
+bool InstallFaultHandler() {
+    return false;
+}
+
+}  // namespace Dynarmic
 
 namespace Dynarmic::Backend {
 

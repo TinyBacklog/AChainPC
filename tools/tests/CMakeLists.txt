@@ -69,3 +69,15 @@ add_executable(test_spinlock test_spinlock.cpp)
 target_link_libraries(test_spinlock PRIVATE dynarmic)
 add_test(NAME runtime_spinlock COMMAND test_spinlock)
 set_tests_properties(runtime_spinlock PROPERTIES LABELS lifter)
+
+# Fastmem arena (FM2): inline accesses (recomp_fastmem_access.h, C for clang,
+# like the lifted code) and their runtime (recomp_fastmem.cpp), with dynarmic's
+# fault handler installed below ours.
+add_executable(test_fastmem test_fastmem.c test_fastmem_dynarmic.cpp
+               ${PROJECT_SOURCE_DIR}/runtime/core/arm/recomp/recomp_fastmem.cpp)
+target_include_directories(test_fastmem PRIVATE ${PROJECT_SOURCE_DIR}/runtime)
+target_compile_definitions(test_fastmem PRIVATE RECOMP_FM_LIMIT_INIT=0)
+target_compile_options(test_fastmem PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu11 -march=x86-64-v3 -UNDEBUG>)
+target_link_libraries(test_fastmem PRIVATE dynarmic Threads::Threads)
+add_test(NAME runtime_fastmem COMMAND test_fastmem)
+set_tests_properties(runtime_fastmem PROPERTIES LABELS lifter TIMEOUT 120)

@@ -25,6 +25,7 @@
 #include "common/common_types.h"
 #include "dynarmic/backend/exception_handler.h"
 #include "dynarmic/common/context.h"
+#include "dynarmic/interface/signal_handler.h"
 #if defined(ARCHITECTURE_x86_64)
 #    include "dynarmic/backend/x64/block_of_code.h"
 #elif defined(ARCHITECTURE_arm64)
@@ -187,6 +188,19 @@ void SigHandler::SigAction(int sig, siginfo_t* info, void* raw_context) {
 }
 
 }  // anonymous namespace
+
+}  // namespace Dynarmic::Backend
+
+namespace Dynarmic {
+
+bool InstallFaultHandler() {
+    Backend::RegisterHandler();
+    return Backend::sig_handler->SupportsFastmem();
+}
+
+}  // namespace Dynarmic
+
+namespace Dynarmic::Backend {
 
 struct ExceptionHandler::Impl final {
     Impl(u64 offset_, u64 size_)
