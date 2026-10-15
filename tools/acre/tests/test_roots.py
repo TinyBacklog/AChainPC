@@ -1,4 +1,5 @@
 import json
+import os
 import struct
 import tempfile
 import unittest
@@ -8,7 +9,9 @@ from acre import roots
 
 NOP = b"\x1f\x20\x03\xd5"
 LAYOUT = {"text_vaddr": 0, "rodata_vaddr": 0x1000, "data_vaddr": 0x2000}
-REAL_INPUTS = Path("<suyu-v0.0.4>/artifacts/aot-validation/effective-inputs")
+# Optional: a directory of dumped modules (one subdirectory per module, with
+# module.json), for the check against real code. The test skips without it.
+REAL_INPUTS = os.environ.get("ACRE_REAL_INPUTS")
 
 
 def write(d, text, rodata=b"", data=b""):
@@ -33,9 +36,9 @@ class RootsTest(unittest.TestCase):
         self.assertNotIn(0x42, found)
 
     def test_real_module_has_entry_among_roots(self):
-        src = REAL_INPUTS / "rtld"
-        if not src.exists():
-            self.skipTest("real inputs not on this machine")
+        if not REAL_INPUTS or not (Path(REAL_INPUTS) / "rtld").exists():
+            self.skipTest("ACRE_REAL_INPUTS not set to a directory of dumped modules")
+        src = Path(REAL_INPUTS) / "rtld"
         found, entry = roots.discover(src, json.loads((src / "module.json").read_text()))
         self.assertGreater(len(found), 10)
         self.assertIn(entry, found)
