@@ -447,7 +447,17 @@ static void* ChooseVirtualBase(size_t virtual_size) {
     if (virtual_base != MAP_FAILED)
         return virtual_base;
 #endif
+#if defined(__linux__) && defined(ARCHITECTURE_x86_64)
+    // acre: reserve the arena inaccessible. Only ranges the guest maps become
+    // accessible (Map replaces the reservation); a guest address that was
+    // never mapped then faults, as it does after Unmap, instead of reading
+    // zeros from a private page the emulator never sees. Fastmem accesses to
+    // the arena (dynarmic, and the recompiled code with FM2) rely on that to
+    // reach the emulator's slow path.
+    return mmap(nullptr, virtual_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+#else
     return mmap(nullptr, virtual_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+#endif
 }
 
 #endif
