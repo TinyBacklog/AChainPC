@@ -16,7 +16,7 @@ if (NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
                     "the game build uses clang. Configure with -DCMAKE_C_COMPILER=clang.")
 endif()
 
-set(_lifter_tests adc bitfields extract fp fpcontract simd crc32 recip aes sha1 sha256 satsimd chain patch fmlite fmlite_inline)
+set(_lifter_tests adc bitfields extract fp fpcontract simd crc32 recip aes sha1 sha256 satsimd chain patch fmlite)
 set(_lifter_out "${CMAKE_CURRENT_BINARY_DIR}/out")
 file(MAKE_DIRECTORY "${_lifter_out}")
 

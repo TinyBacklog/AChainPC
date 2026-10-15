@@ -4642,54 +4642,6 @@ uint64_t recomp_load8(GuestContext*,uint64_t); uint64_t recomp_load16(GuestConte
 uint64_t recomp_load32(GuestContext*,uint64_t); uint64_t recomp_load64(GuestContext*,uint64_t);
 void recomp_store8(GuestContext*,uint64_t,uint64_t); void recomp_store16(GuestContext*,uint64_t,uint64_t);
 void recomp_store32(GuestContext*,uint64_t,uint64_t); void recomp_store64(GuestContext*,uint64_t,uint64_t);
-#if defined(_MSC_VER)
-#define RECOMP_LIKELY(x) (x)
-#else
-#define RECOMP_LIKELY(x) __builtin_expect(!!(x), 1)
-#endif
-/* Fast path. Measured in game, the full-check path spent about 70% of its
-   time on checks rather than on the access itself. One compare against
-   fm_limit covers "disabled" (0), the address-space bound and addresses with
-   high tag bits (they go to the full path, which masks them); the page size,
-   entry stride and attribute mask are constants. A null entry means
-   unmapped, debug or GPU-tracked memory, which the emulator must see. */
-static inline uint8_t* _recomp_fm(const GuestContext* c, uint64_t a, uint32_t n){
-  uintptr_t e;
-  if(a >= c->fm_limit) return 0;
-  if((a & 0xFFF) > 0x1000 - n) return 0;
-  memcpy(&e, c->fm_table + ((a >> 12) << 5), sizeof e);
-  e &= ~(uintptr_t)3;
-  return e ? (uint8_t*)(e + (uintptr_t)a) : 0;
-}
-/* RECOMP_FM_INLINE (a build flag, off by default) expands that fast path
-   inside the blocks and keeps only the full-check path as a call. Off under
-   RECOMP_MEMSTATS, whose counters live in the out-of-line helpers. */
-/* acre: fm inline begin */
-#if defined(RECOMP_FM_INLINE) && !defined(RECOMP_MEMSTATS) && !defined(RECOMP_RUNTIME_SOURCE)
-#define RECOMP_FM_INLINE_LOAD(n, T) \
-  static inline uint64_t recomp_load##n##_i(GuestContext* c, uint64_t a){ \
-    uint8_t* p = _recomp_fm(c,a,sizeof(T)); \
-    if(RECOMP_LIKELY(p != 0)){ T v; memcpy(&v,p,sizeof v); return v; } \
-    return (recomp_load##n)(c,a); }
-#define RECOMP_FM_INLINE_STORE(n, T) \
-  static inline void recomp_store##n##_i(GuestContext* c, uint64_t a, uint64_t v){ \
-    uint8_t* p = _recomp_fm(c,a,sizeof(T)); \
-    if(RECOMP_LIKELY(p != 0)){ T w = (T)v; memcpy(p,&w,sizeof w); return; } \
-    (recomp_store##n)(c,a,v); }
-RECOMP_FM_INLINE_LOAD(8, uint8_t) RECOMP_FM_INLINE_LOAD(16, uint16_t)
-RECOMP_FM_INLINE_LOAD(32, uint32_t) RECOMP_FM_INLINE_LOAD(64, uint64_t)
-RECOMP_FM_INLINE_STORE(8, uint8_t) RECOMP_FM_INLINE_STORE(16, uint16_t)
-RECOMP_FM_INLINE_STORE(32, uint32_t) RECOMP_FM_INLINE_STORE(64, uint64_t)
-#define recomp_load8(c,a) recomp_load8_i(c,a)
-#define recomp_load16(c,a) recomp_load16_i(c,a)
-#define recomp_load32(c,a) recomp_load32_i(c,a)
-#define recomp_load64(c,a) recomp_load64_i(c,a)
-#define recomp_store8(c,a,v) recomp_store8_i(c,a,v)
-#define recomp_store16(c,a,v) recomp_store16_i(c,a,v)
-#define recomp_store32(c,a,v) recomp_store32_i(c,a,v)
-#define recomp_store64(c,a,v) recomp_store64_i(c,a,v)
-#endif
-/* acre: fm inline end */
 void recomp_svc(GuestContext*,unsigned); void recomp_unhandled(GuestContext*,uint32_t,uint64_t);
 void recomp_barrier(void);
 void recomp_exclusive(GuestContext*,uint32_t,uint64_t);
@@ -4710,10 +4662,7 @@ int  recomp_load_segments(GuestContext* c, const char* data_dir);
 }
 
 inline const char* RuntimeC() {
-    return R"RT(/* The out-of-line helpers are defined here, so the header must not map
-   their names to the inline fast path. */
-#define RECOMP_RUNTIME_SOURCE 1
-#include "recomp_runtime.h"
+    return R"RT(#include "recomp_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -4813,8 +4762,10 @@ static void _ms_count(int store, uint32_t sz, const GuestContext* c, uint64_t a,
 
 #if defined(_MSC_VER)
 #define RECOMP_NOINLINE __declspec(noinline)
+#define RECOMP_LIKELY(x) (x)
 #else
 #define RECOMP_NOINLINE __attribute__((noinline))
+#define RECOMP_LIKELY(x) __builtin_expect(!!(x), 1)
 #endif
 
 /* The full-check path: host bridge, 48-bit masking, bounds, page walk, and the
@@ -4849,6 +4800,20 @@ static RECOMP_NOINLINE void memstore(GuestContext* c, uint64_t a, uint32_t sz, u
   { uint8_t* p=memptr(c,a,sz); if(p)memcpy(p,&v,sz); }
 }
 
+/* Fast path. Measured in game, the full-check path spent about 70% of its
+   time on checks rather than on the access itself. One compare against
+   fm_limit covers "disabled" (0), the address-space bound and addresses with
+   high tag bits (they go to the full path, which masks them); the page size,
+   entry stride and attribute mask are constants. A null entry means
+   unmapped, debug or GPU-tracked memory, which the emulator must see. */
+static inline uint8_t* _recomp_fm(const GuestContext* c, uint64_t a, uint32_t n){
+  uintptr_t e;
+  if(a >= c->fm_limit) return 0;
+  if((a & 0xFFF) > 0x1000 - n) return 0;
+  memcpy(&e, c->fm_table + ((a >> 12) << 5), sizeof e);
+  e &= ~(uintptr_t)3;
+  return e ? (uint8_t*)(e + (uintptr_t)a) : 0;
+}
 #define RECOMP_FM_LOAD(n, T) \
   { uint8_t* p = _recomp_fm(c,a,n); \
     if(RECOMP_LIKELY(p != 0)){ T v; RECOMP_MS(0, n, 1); memcpy(&v,p,n); return v; } \

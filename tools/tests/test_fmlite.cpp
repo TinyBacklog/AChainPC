@@ -18,27 +18,10 @@ int main() {
         std::cerr << "guest memory markers missing from RuntimeC()\n";
         return 1;
     }
-#ifdef FMLITE_INLINE
-    // Inline variant: the helpers are defined out of line first (as in the
-    // runtime source), then the header's inline block maps the names onto the
-    // in-block fast path, so every call below goes through it.
-    const std::string header = suyu::recomp::RuntimeH();
-    const size_t ia = header.find("/* acre: fm inline begin */");
-    const size_t ib = header.find("/* acre: fm inline end */");
-    if (ia == std::string::npos || ib == std::string::npos) {
-        std::cerr << "fm inline markers missing from RuntimeH()\n";
-        return 1;
-    }
-    std::cout << "#define RECOMP_FM_INLINE 1\n#define RECOMP_RUNTIME_SOURCE 1\n";
-#endif
     std::cout << suyu::recomp::RuntimeH() << "\n#include <stdio.h>\n#include <stdlib.h>\n";
     std::cout << "volatile int acre_fps60 = 0;\n";
     std::cout << "static uint8_t* memptr(GuestContext* c, uint64_t va, uint64_t sz){(void)c;(void)va;(void)sz;return 0;}\n";
     std::cout << runtime.substr(a, b - a) << "\n";
-#ifdef FMLITE_INLINE
-    std::cout << "#undef RECOMP_RUNTIME_SOURCE\n" << header.substr(ia, ib - ia) << "\n";
-    std::cout << "#ifndef recomp_load32\n#error inline mapping not active\n#endif\n";
-#endif
     std::cout << R"C(
 #define PAGES 64
 #define AS_SIZE (PAGES * 4096ULL)
