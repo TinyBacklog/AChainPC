@@ -3795,9 +3795,29 @@ struct RecompileStats {
 // interrupcoes, os SVC pendentes e o pedido de paragem deixariam de ser vistos.
 // O PC e escrito na mesma antes do salto, para que o caminho em que o orcamento
 // se esgota deixe o estado exatamente como o despachante espera.
-inline std::string ChainSuccessors(const std::string& body, const std::string& mod,
+//
+// Indirect branches (RET, BR, BLR) chain too, through the module's own block
+// table: recomp_lookup is a direct index, so a hit costs one bounds check and
+// two loads, and a target outside the module (another module, or an address
+// below the base, which wraps) misses and goes back to the dispatcher as
+// before. Those branches were most of the remaining trips to the dispatcher,
+// and each trip costs its checks and the cross-module search. Same budget.
+inline std::string ChainIndirect(std::string body) {
+    for (const char* tag : {"RET", "BR", "BLR"}) {
+        const std::string from = std::string("return; /* ") + tag + " */";
+        const std::string to = std::string("if(--c->chain_budget>0){ BlockFn _f=recomp_lookup(c->pc-g_module_base); "
+                                           "if(_f){ _f(c); return; } } return; /* ") + tag + " */";
+        for (size_t at = body.find(from); at != std::string::npos; at = body.find(from, at + to.size())) {
+            body.replace(at, from.size(), to);
+        }
+    }
+    return body;
+}
+
+inline std::string ChainSuccessors(const std::string& original, const std::string& mod,
                                    const std::unordered_set<u64>& block_starts) {
     static const std::string prefix = "c->pc=g_module_base+0x";
+    const std::string body = ChainIndirect(original);
     if (body.find(prefix) == std::string::npos) return body;
     std::string out;
     out.reserve(body.size() + 64);

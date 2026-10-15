@@ -53,6 +53,21 @@ const std::vector<uint32_t> kLoop = {
     0xd65f03c0,  // 0x10: ret
 };
 
+// Indirect branches. BLR and RET land on blocks of the same module, so the
+// rewrite may chain them through the module's own lookup; the BR at the end
+// leaves the module (x30 points outside it), so it must hand back to the
+// dispatcher with the PC set. Chained with any budget above the number of
+// blocks, the whole run is then a single dispatch.
+const std::vector<uint32_t> kCalls = {
+    0xaa1e03e5,  // 0x00: mov  x5, x30
+    0xd63f00c0,  // 0x04: blr  x6        (x6 = 0x14)
+    0x91000400,  // 0x08: add  x0, x0, #1
+    0xaa0503fe,  // 0x0c: mov  x30, x5
+    0xd61f03c0,  // 0x10: br   x30       -> outside the module
+    0x91000800,  // 0x14: add  x0, x0, #2
+    0xd65f03c0,  // 0x18: ret            -> 0x08
+};
+
 }  // namespace
 
 int main() {
@@ -75,6 +90,17 @@ typedef struct GuestContext {
     int32_t chain_budget;
 } GuestContext;
 uint64_t g_module_base = 0;
+/* The module's own block lookup, which the rewrite calls for indirect
+   branches. Each driver points it at the table it is running. */
+typedef void (*BlockFn)(GuestContext*);
+static BlockFn* g_lookup = 0;
+static uint64_t g_lookup_n = 0;
+static int g_lookups = 0;
+BlockFn recomp_lookup(uint64_t pc){
+    ++g_lookups;
+    if (pc % 4 || pc / 4 >= g_lookup_n) return 0;
+    return g_lookup[pc / 4];
+}
 /* Counts calls rather than servicing them: what matters is that chaining does
    not skip the system call, which is exactly what it did before the terminator
    was required to be the last thing in the block. */
@@ -179,6 +205,38 @@ void recomp_store64(GuestContext*c,uint64_t a,uint64_t v){(void)c;ms(a,8,v);}
         std::cout << "};\n#define NLOOP " << kLoop.size() << "\n";
     }
 
+    // The indirect-branch program, as plain blocks and as chained ones.
+    {
+        std::unordered_set<uint64_t> call_starts;
+        for (size_t i = 0; i < kCalls.size(); ++i) call_starts.insert(i * 4);
+        std::string plain_bodies, chained_bodies;
+        for (size_t i = 0; i < kCalls.size(); ++i) {
+            const uint64_t address = i * 4;
+            std::string body;
+            const bool open = suyu::recomp::Translate(kCalls[i], address, body);
+            if (open) {
+                char b[32];
+                snprintf(b, sizeof b, "%llx", (unsigned long long)(address + 4));
+                body += "    c->pc=g_module_base+0x" + std::string(b) + "ULL; return;\n";
+            }
+            char name[32];
+            snprintf(name, sizeof name, "%016llx", (unsigned long long)address);
+            std::cout << "void blk_k_" << name << "(GuestContext*);\n";
+            plain_bodies += "static void callplain_" + std::to_string(i) + "(GuestContext* c){\n" + body + "}\n";
+            chained_bodies += "void blk_k_" + std::string(name) + "(GuestContext* c){\n" +
+                              suyu::recomp::ChainSuccessors(body, "k", call_starts) + "}\n";
+        }
+        std::cout << plain_bodies << chained_bodies << "static BlockFn callplains[] = {";
+        for (size_t i = 0; i < kCalls.size(); ++i) std::cout << "callplain_" << i << ",";
+        std::cout << "};\nstatic BlockFn callchains[] = {";
+        for (size_t i = 0; i < kCalls.size(); ++i) {
+            char name[32];
+            snprintf(name, sizeof name, "%016llx", (unsigned long long)(i * 4));
+            std::cout << "blk_k_" << name << ",";
+        }
+        std::cout << "};\n#define NCALL " << kCalls.size() << "\n";
+    }
+
     // A terminator whose successor has no block must be left exactly as it was.
     // Checked here rather than at run time: with every offset a block start the
     // run-time comparison can never reach this path.
@@ -199,6 +257,20 @@ static int drive(GuestContext* c, void (**table)(GuestContext*), int32_t budget)
     for (int guard = 0; guard < 10000; ++guard) {
         const uint64_t index = c->pc / 4;
         if (c->pc % 4 || index >= NBLK) return dispatches;   /* returned out */
+        c->chain_budget = budget;
+        ++dispatches;
+        table[index](c);
+        if (c->halted) return dispatches;
+    }
+    return -1;
+}
+
+static int drive_calls(GuestContext* c, BlockFn* table, int32_t budget) {
+    int dispatches = 0;
+    g_lookup = table; g_lookup_n = NCALL;
+    for (int guard = 0; guard < 10000; ++guard) {
+        const uint64_t index = c->pc / 4;
+        if (c->pc % 4 || index >= NCALL) return dispatches;
         c->chain_budget = budget;
         ++dispatches;
         table[index](c);
@@ -251,6 +323,34 @@ int main(void) {
         if (a.x[0] != 0 || b.x[0] != 0) { printf("FAIL: o ciclo nao correu ate ao fim\n"); return 1; }
         ++checks;
     }
+    /* Indirect branches: same result as the plain blocks for every budget;
+       with room to spare the run is one dispatch, which only happens if BLR
+       and RET were chained; and the BR out of the module still returns. */
+    for (t = 0; t < (int)(sizeof budgets / sizeof budgets[0]); ++t) {
+        GuestContext ref, trial;
+        int dref, dtrial;
+        memset(&ref, 0, sizeof ref); ref.x[0] = 5; ref.x[6] = 0x14; ref.x[30] = 0x10000;
+        trial = ref;
+        dref = drive_calls(&ref, callplains, 1);
+        dtrial = drive_calls(&trial, callchains, budgets[t]);
+        if (dref < 0 || dtrial < 0) { printf("FAIL: indirect run did not finish\n"); return 1; }
+        if (memcmp(trial.x, ref.x, sizeof ref.x) || trial.pc != ref.pc || trial.pc != 0x10000 ||
+            trial.x[0] != 8) {
+            printf("FAIL budget=%d: indirect chaining changed the result (x0=%llu pc=%llx)\n",
+                   budgets[t], (unsigned long long)trial.x[0], (unsigned long long)trial.pc);
+            return 1;
+        }
+        if (budgets[t] >= 128 && dtrial != 1) {
+            printf("FAIL: BLR/RET not chained (%d dispatches)\n", dtrial);
+            return 1;
+        }
+        if (budgets[t] == 1 && dtrial != dref) {
+            printf("FAIL: budget 1 still chained an indirect branch (%d vs %d)\n", dtrial, dref);
+            return 1;
+        }
+        ++checks;
+    }
+    g_lookup = 0; g_lookup_n = 0;
     for (t = 0; t < 400; ++t) {
         GuestContext base;
         uint8_t mem0[MEMSZ];
