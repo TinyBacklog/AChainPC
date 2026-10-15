@@ -63,3 +63,9 @@ target_link_libraries(test_acre_ini PRIVATE SimpleIni::SimpleIni)
 target_compile_definitions(test_acre_ini PRIVATE ACRE_INI_TEMPLATE="${PROJECT_SOURCE_DIR}/frontend/astralchain.ini")
 add_test(NAME frontend_acre_ini COMMAND test_acre_ini)
 set_tests_properties(frontend_acre_ini PROPERTIES LABELS frontend)
+
+# Dynarmic::SpinLock (exclusive monitor lock): mutual exclusion under contention.
+add_executable(test_spinlock test_spinlock.cpp)
+target_link_libraries(test_spinlock PRIVATE dynarmic)
+add_test(NAME runtime_spinlock COMMAND test_spinlock)
+set_tests_properties(runtime_spinlock PROPERTIES LABELS lifter)

@@ -6,19 +6,11 @@
  * SPDX-License-Identifier: 0BSD
  */
 
-#include <mutex>
-#include <optional>
 #include "dynarmic/backend/x64/xbyak.h"
 
 #include "dynarmic/backend/x64/abi.h"
 #include "dynarmic/backend/x64/hostloc.h"
 #include "dynarmic/common/spin_lock.h"
-
-#ifdef DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT
-static const auto default_cg_mode = Xbyak::DontSetProtectRWE;
-#else
-static const auto default_cg_mode = nullptr; //Allow RWE
-#endif
 
 namespace Dynarmic {
 
@@ -74,50 +66,24 @@ void EmitSpinLockUnlock(Xbyak::CodeGenerator& code, Xbyak::Reg64 ptr, Xbyak::Reg
     code.mfence();
 }
 
-namespace {
-struct SpinLockImpl {
-    void Initialize() noexcept;
-    static void GlobalInitialize() noexcept;
-    Xbyak::CodeGenerator code = Xbyak::CodeGenerator(4096, default_cg_mode);
-    void (*lock)(volatile int*) = nullptr;
-    void (*unlock)(volatile int*) = nullptr;
-};
-
-std::once_flag flag;
-/// @brief Bear in mind that initializing the variable as-is on ctor time will trigger bugs
-/// because some OSes do not prepare mprotect() properly at static ctor time
-/// We can't really do anything about it, so just live with this fact
-std::optional<SpinLockImpl> impl;
-
-void SpinLockImpl::Initialize() noexcept {
-    // Needed for W^X systems (i.e SElinux, OpenBSD)
-    code.setProtectMode(Xbyak::CodeArray::ProtectMode::PROTECT_RW);
-    Xbyak::Reg64 const ABI_PARAM1 = Backend::X64::HostLocToReg64(Backend::X64::ABI_PARAM1);
-    code.align();
-    lock = code.getCurr<void (*)(volatile int*)>();
-    EmitSpinLockLock(code, ABI_PARAM1, code.eax, false);
-    code.ret();
-    code.align();
-    unlock = code.getCurr<void (*)(volatile int*)>();
-    EmitSpinLockUnlock(code, ABI_PARAM1, code.eax);
-    code.ret();
-    code.setProtectMode(Xbyak::CodeArray::ProtectMode::PROTECT_RE);
-}
-
-void SpinLockImpl::GlobalInitialize() noexcept {
-    impl.emplace();
-    impl->Initialize();
-}
-}  // namespace
-
+// Lock and Unlock are called from C++ (the exclusive monitor, on every
+// recompiled LDXR/STXR), so they use plain atomics: a direct exchange instead
+// of a call into generated code, a spin that only reads the word until it looks
+// free (so waiting cores do not bounce its cache line), and a release store to
+// unlock - on x86 an ordinary store, where the generated unlock paid for an
+// XCHG and an MFENCE. The word protocol (0 free, 1 held) is unchanged, so code
+// that inlines EmitSpinLockLock/Unlock still interoperates with these.
 void SpinLock::Lock() noexcept {
-    std::call_once(flag, &SpinLockImpl::GlobalInitialize);
-    impl->lock(&storage);
+    int* const word = const_cast<int*>(&storage);
+    while (__atomic_exchange_n(word, 1, __ATOMIC_ACQUIRE) != 0) {
+        while (__atomic_load_n(word, __ATOMIC_RELAXED) != 0) {
+            __builtin_ia32_pause();
+        }
+    }
 }
 
 void SpinLock::Unlock() noexcept {
-    std::call_once(flag, &SpinLockImpl::GlobalInitialize);
-    impl->unlock(&storage);
+    __atomic_store_n(const_cast<int*>(&storage), 0, __ATOMIC_RELEASE);
 }
 
 }  // namespace Dynarmic
