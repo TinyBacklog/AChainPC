@@ -16,7 +16,7 @@ for f in range(files):
         # linker places before plain .text, while its table entries still come
         # last: the table is then out of address order and has to be sorted.
         attr = '__attribute__((section(".text.unlikely.fm2poc"))) ' if f == files - 1 else ""
-        lines.append("%suint64_t site_%d(Ctx* c, uint64_t a){ return %s + %d; }" % (attr, i, op, i))
+        lines.append("%suint64_t site_%d(Ctx* c, uint64_t a){ FM2_BLOCK_LIMIT; return %s + %d; }" % (attr, i, op, i))
     (out / f"sites_{f}.c").write_text("\n".join(lines) + "\n")
 decls = "\n".join("uint64_t site_%d(Ctx*, uint64_t);" % i for i in range(n))
 table = ",\n".join("site_%d" % i for i in range(n))

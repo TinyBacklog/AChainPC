@@ -7,7 +7,11 @@
  * set. Arena pages: p0 RW, p1 read-only (GPU-cached, reactive flushing off),
  * p2 none (GPU-cached with reactive flushing, debug or unmapped), p3 RW. A
  * private read-write sentinel page follows the arena to catch any access that
- * runs past its end. */
+ * runs past its end.
+ *
+ * Every function that accesses guest memory owns a limit word
+ * (FM2_BLOCK_LIMIT). Demotion is off (threshold 0) except in the tests that
+ * check it, so the other tests see one fault per protected access. */
 #define _GNU_SOURCE
 #include <setjmp.h>
 #include <signal.h>
@@ -24,6 +28,7 @@
 #define PAGE 4096u
 #define NPAGES 4u
 #define ASIZE (NPAGES * PAGE)
+#define LIMIT (ASIZE - 7)
 
 static uint8_t* g_backing;
 static uint8_t* g_sentinel;
@@ -66,21 +71,23 @@ static void setup(void) {
     memset(g_sentinel, 0xA5, PAGE);
     for (unsigned i = 0; i < ASIZE; ++i) g_backing[i] = (uint8_t)(i * 7 + 3);
     g_ctx.arena = arena;
-    g_ctx.limit = ASIZE - 7;
 }
+
+/* All limit words back to the arena limit, fault counts cleared. */
+static void reset_limits(void) { fm2_set_all_limits(LIMIT); }
 
 static uint64_t ref_load(uint64_t a, unsigned size) { uint64_t v = 0; memcpy(&v, g_backing + a, size); return v; }
 
 typedef uint64_t (*LoadFn)(Ctx*, uint64_t);
 typedef void (*StoreFn)(Ctx*, uint64_t, uint64_t);
-static uint64_t l8(Ctx* c, uint64_t a) { return fm2_load8(c, a); }
-static uint64_t l16(Ctx* c, uint64_t a) { return fm2_load16(c, a); }
-static uint64_t l32(Ctx* c, uint64_t a) { return fm2_load32(c, a); }
-static uint64_t l64(Ctx* c, uint64_t a) { return fm2_load64(c, a); }
-static void s8(Ctx* c, uint64_t a, uint64_t v) { fm2_store8(c, a, v); }
-static void s16(Ctx* c, uint64_t a, uint64_t v) { fm2_store16(c, a, v); }
-static void s32(Ctx* c, uint64_t a, uint64_t v) { fm2_store32(c, a, v); }
-static void s64(Ctx* c, uint64_t a, uint64_t v) { fm2_store64(c, a, v); }
+static uint64_t l8(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load8(c, a); }
+static uint64_t l16(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load16(c, a); }
+static uint64_t l32(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load32(c, a); }
+static uint64_t l64(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load64(c, a); }
+static void s8(Ctx* c, uint64_t a, uint64_t v) { FM2_BLOCK_LIMIT; fm2_store8(c, a, v); }
+static void s16(Ctx* c, uint64_t a, uint64_t v) { FM2_BLOCK_LIMIT; fm2_store16(c, a, v); }
+static void s32(Ctx* c, uint64_t a, uint64_t v) { FM2_BLOCK_LIMIT; fm2_store32(c, a, v); }
+static void s64(Ctx* c, uint64_t a, uint64_t v) { FM2_BLOCK_LIMIT; fm2_store64(c, a, v); }
 static const LoadFn kLoads[] = {l8, l16, l32, l64};
 static const StoreFn kStores[] = {s8, s16, s32, s64};
 static const unsigned kSizes[] = {1, 2, 4, 8};
@@ -134,7 +141,7 @@ static void test_no_partial_store(void) {
        (p1 read-only): the first four bytes are on a writable page. */
     uint8_t before[8];
     memcpy(before, g_backing + PAGE - 8, 8);
-    fm2_store64(&g_ctx, PAGE - 4, 0xFFFFFFFFFFFFFFFFull);
+    s64(&g_ctx, PAGE - 4, 0xFFFFFFFFFFFFFFFFull);
     CHECK(memcmp(g_p0_tail_at_slow, before, 8) == 0, "faulting crossing store wrote part of the first page");
 }
 
@@ -152,16 +159,17 @@ static void test_limit(void) {
         if (g_sentinel[i] != want) { CHECK(0, "sentinel page written at %u", i); break; }
     }
     CHECK(fm2_faults() == f0, "limit checks faulted");
-    const uint64_t saved = g_ctx.limit;
-    g_ctx.limit = 0;
+    fm2_set_all_limits(0);
     expect_load(3, 0x10, 1, 0, "limit 0 = off");
     expect_store(3, 0x10, 1, 0, "limit 0 = off");
-    g_ctx.limit = saved;
+    expect_load(3, 2 * PAGE, 1, 0, "limit 0 = off, protected page");
+    reset_limits();
 }
 
 /* Many live values in integer and vector registers across a faulting access.
    The same function run with the fast path off must give the same answer. */
 __attribute__((noinline)) static uint64_t live_values(Ctx* c, uint64_t a, uint64_t s) {
+    FM2_BLOCK_LIMIT;
     uint64_t r[12];
     double d[6];
     for (int i = 0; i < 12; ++i) r[i] = s * (2 * i + 3) ^ (s >> i);
@@ -180,13 +188,50 @@ static void test_registers(void) {
         const unsigned long f0 = fm2_faults();
         const uint64_t fast = live_values(&g_ctx, a, s);
         const uint64_t faults = fm2_faults() - f0;
-        const uint64_t saved = g_ctx.limit;
-        g_ctx.limit = 0;
+        fm2_set_all_limits(0);
         const uint64_t slow = live_values(&g_ctx, a, s);
-        g_ctx.limit = saved;
+        reset_limits();
         CHECK(fast == slow, "live values differ after fault (s=%llu)", (unsigned long long)s);
         CHECK(faults == 2, "expected two faults, got %llu", (unsigned long long)faults);
     }
+}
+
+/* Demotion: after `after` faults of one access, its function's limit word is
+   0. The function then takes the slow path everywhere, without faulting, and
+   other functions keep their fast path. Resetting the words re-promotes it. */
+__attribute__((noinline)) static uint64_t demo_a(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load32(c, a) + fm2_load64(c, a + 8); }
+__attribute__((noinline)) static uint64_t demo_b(Ctx* c, uint64_t a) { FM2_BLOCK_LIMIT; return fm2_load32(c, a); }
+
+static void test_demotion(void) {
+    const unsigned after = 16;
+    fm2_set_demote_after(after);
+    reset_limits();
+    const unsigned long d0 = fm2_demotions();
+    unsigned long f0 = fm2_faults(), s0 = atomic_load(&g_slow_calls);
+    /* Each call faults twice (both loads on p2), counted per access. */
+    for (unsigned i = 0; i < after - 1; ++i) demo_a(&g_ctx, 2 * PAGE + 0x40);
+    CHECK(fm2_demotions() == d0, "demoted before %u faults", after);
+    CHECK(fm2_faults() - f0 == 2 * (after - 1), "faults %lu before demotion", fm2_faults() - f0);
+    demo_a(&g_ctx, 2 * PAGE + 0x40);
+    CHECK(fm2_demotions() - d0 == 1, "two accesses reaching the threshold together demoted %lu times",
+          fm2_demotions() - d0);
+    /* The second access of that call ran after the store of 0: no fault. */
+    CHECK(fm2_faults() - f0 == 2 * after - 1, "faults %lu at demotion, want %u", fm2_faults() - f0, 2 * after - 1);
+    f0 = fm2_faults(); s0 = atomic_load(&g_slow_calls);
+    const uint64_t want = ref_load(0x40, 4) + ref_load(0x48, 8);
+    CHECK(demo_a(&g_ctx, 0x40) == want, "demoted function gives wrong values on RW memory");
+    demo_a(&g_ctx, 2 * PAGE + 0x40);
+    CHECK(fm2_faults() == f0, "demoted function still faults");
+    CHECK(atomic_load(&g_slow_calls) - s0 == 4, "demoted function slow calls %lu, want 4",
+          atomic_load(&g_slow_calls) - s0);
+    s0 = atomic_load(&g_slow_calls);
+    CHECK(demo_b(&g_ctx, 0x40) == ref_load(0x40, 4), "other function value");
+    CHECK(atomic_load(&g_slow_calls) == s0, "other function lost its fast path");
+    reset_limits();
+    s0 = atomic_load(&g_slow_calls);
+    demo_a(&g_ctx, 0x40);
+    CHECK(atomic_load(&g_slow_calls) == s0, "reset did not re-promote");
+    fm2_set_demote_after(0);
 }
 
 /* A fault that is not ours goes to the handler installed before ours. */
@@ -209,6 +254,7 @@ static void test_chaining(void) {
 
 /* Faults from several threads at once, one of them on an alternate stack. */
 static void* thread_main(void* arg) {
+    FM2_BLOCK_LIMIT;
     const int alt = (int)(intptr_t)arg;
     if (alt) {
         stack_t ss = {.ss_sp = malloc(1 << 16), .ss_size = 1 << 16, .ss_flags = 0};
@@ -222,12 +268,35 @@ static void* thread_main(void* arg) {
     return (void*)(uintptr_t)sum;
 }
 
-static void test_threads(void) {
+static uint64_t run_threads(void) {
     pthread_t t[4];
-    const unsigned long f0 = fm2_faults();
+    uint64_t sum = 0;
     for (int i = 0; i < 4; ++i) pthread_create(&t[i], NULL, thread_main, (void*)(intptr_t)(i == 0));
-    for (int i = 0; i < 4; ++i) pthread_join(t[i], NULL);
+    for (int i = 0; i < 4; ++i) {
+        void* r;
+        pthread_join(t[i], &r);
+        sum += (uint64_t)(uintptr_t)r;
+    }
+    return sum;
+}
+
+static void test_threads(void) {
+    reset_limits();
+    unsigned long f0 = fm2_faults();
+    const uint64_t want = run_threads();
     CHECK(fm2_faults() - f0 == 4ul * 200000, "thread faults %lu, want %lu", fm2_faults() - f0, 4ul * 200000);
+    /* Same work with demotion: four threads race on one access. One demotion,
+       a few faults past the threshold at most, same results. */
+    fm2_set_demote_after(16);
+    reset_limits();
+    const unsigned long d0 = fm2_demotions();
+    f0 = fm2_faults();
+    CHECK(run_threads() == want, "threads with demotion read different values");
+    CHECK(fm2_demotions() - d0 == 1, "thread demotions %lu, want 1", fm2_demotions() - d0);
+    CHECK(fm2_faults() - f0 >= 16 && fm2_faults() - f0 < 16 + 64, "thread faults with demotion %lu",
+          fm2_faults() - f0);
+    fm2_set_demote_after(0);
+    reset_limits();
 }
 
 /* Benchmarks. The baseline helper mirrors today's FM-lite fast path: a
@@ -247,6 +316,7 @@ __attribute__((noinline)) static uint64_t helper_load32(Ctx* c, uint64_t a) {
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec / 1e9; }
 
 static void bench(void) {
+    FM2_BLOCK_LIMIT;
     for (unsigned p = 0; p < NPAGES; ++p) {
         uintptr_t e = (p == 2) ? 0 : (uintptr_t)g_backing; /* entry = host page - guest page */
         memcpy((uint8_t*)g_pt + p * 32, &e, sizeof e);
@@ -279,12 +349,16 @@ int main(int argc, char** argv) {
     sa.sa_flags = SA_SIGINFO;
     sigaction(SIGSEGV, &sa, NULL);
     if (fm2_install() != 0 || fm2_install() != 0) { printf("FAIL install\n"); return 1; }
-    printf("table: %zu entries, init %.3f ms\n", fm2_table_entries(), fm2_init_seconds() * 1e3);
+    printf("table: %zu entries, %zu limit words, init %.3f ms\n", fm2_table_entries(), fm2_limit_words(),
+           fm2_init_seconds() * 1e3);
+    fm2_set_demote_after(0);
+    reset_limits();
 
     test_widths_and_pages();
     test_no_partial_store();
     test_limit();
     test_registers();
+    test_demotion();
     test_chaining();
     test_threads();
     if (argc > 1 && strcmp(argv[1], "--bench") == 0) bench();
