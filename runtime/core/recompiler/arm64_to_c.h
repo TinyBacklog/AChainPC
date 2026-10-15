@@ -4527,6 +4527,11 @@ typedef struct GuestContext {
        pendentes e o pedido de paragem deixariam de ser vistos. O emulador
        repoe isto antes de cada entrada. */
     int32_t chain_budget;
+    /* Guest-memory fast path (see recomp_load32): the emulator's page table and
+       the page-aligned end of the address space it covers. fm_limit == 0
+       turns the fast path off and every access takes the full-check path. */
+    const uint8_t* fm_table;
+    uint64_t fm_limit;
     /* Save-data filesystem state */
     char save_dir[512];
     /* Heap break for SVC memory allocation */
@@ -4557,6 +4562,8 @@ typedef char recomp_layout_tpidr[offsetof(GuestContext, tpidr_el0) == 824 ? 1 : 
 typedef char recomp_layout_host[offsetof(GuestContext, host_mem) == 832 ? 1 : -1];
 typedef char recomp_layout_tpidrro[offsetof(GuestContext, tpidrro_el0) == 840 ? 1 : -1];
 typedef char recomp_layout_chain[offsetof(GuestContext, chain_budget) == 848 ? 1 : -1];
+typedef char recomp_layout_fmtable[offsetof(GuestContext, fm_table) == 856 ? 1 : -1];
+typedef char recomp_layout_fmlimit[offsetof(GuestContext, fm_limit) == 864 ? 1 : -1];
 
 /* Where this module is actually loaded in the guest's address space.
    Every address the static pass bakes in - ADR/ADRP results, branch targets,
@@ -4635,6 +4642,54 @@ uint64_t recomp_load8(GuestContext*,uint64_t); uint64_t recomp_load16(GuestConte
 uint64_t recomp_load32(GuestContext*,uint64_t); uint64_t recomp_load64(GuestContext*,uint64_t);
 void recomp_store8(GuestContext*,uint64_t,uint64_t); void recomp_store16(GuestContext*,uint64_t,uint64_t);
 void recomp_store32(GuestContext*,uint64_t,uint64_t); void recomp_store64(GuestContext*,uint64_t,uint64_t);
+#if defined(_MSC_VER)
+#define RECOMP_LIKELY(x) (x)
+#else
+#define RECOMP_LIKELY(x) __builtin_expect(!!(x), 1)
+#endif
+/* Fast path. Measured in game, the full-check path spent about 70% of its
+   time on checks rather than on the access itself. One compare against
+   fm_limit covers "disabled" (0), the address-space bound and addresses with
+   high tag bits (they go to the full path, which masks them); the page size,
+   entry stride and attribute mask are constants. A null entry means
+   unmapped, debug or GPU-tracked memory, which the emulator must see. */
+static inline uint8_t* _recomp_fm(const GuestContext* c, uint64_t a, uint32_t n){
+  uintptr_t e;
+  if(a >= c->fm_limit) return 0;
+  if((a & 0xFFF) > 0x1000 - n) return 0;
+  memcpy(&e, c->fm_table + ((a >> 12) << 5), sizeof e);
+  e &= ~(uintptr_t)3;
+  return e ? (uint8_t*)(e + (uintptr_t)a) : 0;
+}
+/* RECOMP_FM_INLINE (a build flag, off by default) expands that fast path
+   inside the blocks and keeps only the full-check path as a call. Off under
+   RECOMP_MEMSTATS, whose counters live in the out-of-line helpers. */
+/* acre: fm inline begin */
+#if defined(RECOMP_FM_INLINE) && !defined(RECOMP_MEMSTATS) && !defined(RECOMP_RUNTIME_SOURCE)
+#define RECOMP_FM_INLINE_LOAD(n, T) \
+  static inline uint64_t recomp_load##n##_i(GuestContext* c, uint64_t a){ \
+    uint8_t* p = _recomp_fm(c,a,sizeof(T)); \
+    if(RECOMP_LIKELY(p != 0)){ T v; memcpy(&v,p,sizeof v); return v; } \
+    return (recomp_load##n)(c,a); }
+#define RECOMP_FM_INLINE_STORE(n, T) \
+  static inline void recomp_store##n##_i(GuestContext* c, uint64_t a, uint64_t v){ \
+    uint8_t* p = _recomp_fm(c,a,sizeof(T)); \
+    if(RECOMP_LIKELY(p != 0)){ T w = (T)v; memcpy(p,&w,sizeof w); return; } \
+    (recomp_store##n)(c,a,v); }
+RECOMP_FM_INLINE_LOAD(8, uint8_t) RECOMP_FM_INLINE_LOAD(16, uint16_t)
+RECOMP_FM_INLINE_LOAD(32, uint32_t) RECOMP_FM_INLINE_LOAD(64, uint64_t)
+RECOMP_FM_INLINE_STORE(8, uint8_t) RECOMP_FM_INLINE_STORE(16, uint16_t)
+RECOMP_FM_INLINE_STORE(32, uint32_t) RECOMP_FM_INLINE_STORE(64, uint64_t)
+#define recomp_load8(c,a) recomp_load8_i(c,a)
+#define recomp_load16(c,a) recomp_load16_i(c,a)
+#define recomp_load32(c,a) recomp_load32_i(c,a)
+#define recomp_load64(c,a) recomp_load64_i(c,a)
+#define recomp_store8(c,a,v) recomp_store8_i(c,a,v)
+#define recomp_store16(c,a,v) recomp_store16_i(c,a,v)
+#define recomp_store32(c,a,v) recomp_store32_i(c,a,v)
+#define recomp_store64(c,a,v) recomp_store64_i(c,a,v)
+#endif
+/* acre: fm inline end */
 void recomp_svc(GuestContext*,unsigned); void recomp_unhandled(GuestContext*,uint32_t,uint64_t);
 void recomp_barrier(void);
 void recomp_exclusive(GuestContext*,uint32_t,uint64_t);
@@ -4655,7 +4710,10 @@ int  recomp_load_segments(GuestContext* c, const char* data_dir);
 }
 
 inline const char* RuntimeC() {
-    return R"RT(#include "recomp_runtime.h"
+    return R"RT(/* The out-of-line helpers are defined here, so the header must not map
+   their names to the inline fast path. */
+#define RECOMP_RUNTIME_SOURCE 1
+#include "recomp_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -4686,6 +4744,7 @@ static uint8_t* memptr(GuestContext* c, uint64_t va, uint64_t sz){
    passagem completa por todas as leituras, medido no emulador real em vez de
    estimado. A segunda leitura acerta na cache, por isso a diferenca e um limite
    inferior do custo da primeira. */
+/* acre: guest memory begin */
 static int _recomp_double_loads = -1;
 
 /* Resolve um endereco do convidado num do anfitriao sem sair deste ficheiro.
@@ -4752,7 +4811,16 @@ static void _ms_count(int store, uint32_t sz, const GuestContext* c, uint64_t a,
 #define RECOMP_MS(store, sz, fast) ((void)0)
 #endif
 
-static uint64_t memload(GuestContext* c, uint64_t a, uint32_t sz){
+#if defined(_MSC_VER)
+#define RECOMP_NOINLINE __declspec(noinline)
+#else
+#define RECOMP_NOINLINE __attribute__((noinline))
+#endif
+
+/* The full-check path: host bridge, 48-bit masking, bounds, page walk, and the
+   emulator callback. Kept out of line so the fast path below needs no stack
+   frame. */
+static RECOMP_NOINLINE uint64_t memload(GuestContext* c, uint64_t a, uint32_t sz){
   if(c->host_mem){
     const RecompHostMem* h = c->host_mem;
     uint8_t* fp;
@@ -4769,7 +4837,7 @@ static uint64_t memload(GuestContext* c, uint64_t a, uint32_t sz){
   }
   { uint8_t* p=memptr(c,a,sz); uint64_t v=0; if(p)memcpy(&v,p,sz); return v; }
 }
-static void memstore(GuestContext* c, uint64_t a, uint32_t sz, uint64_t v){
+static RECOMP_NOINLINE void memstore(GuestContext* c, uint64_t a, uint32_t sz, uint64_t v){
   if(c->host_mem){
     const RecompHostMem* h = c->host_mem;
     uint8_t* fp = _recomp_fastptr(c,a,sz);
@@ -4781,14 +4849,23 @@ static void memstore(GuestContext* c, uint64_t a, uint32_t sz, uint64_t v){
   { uint8_t* p=memptr(c,a,sz); if(p)memcpy(p,&v,sz); }
 }
 
-uint64_t recomp_load8 (GuestContext* c,uint64_t a){return memload(c,a,1);}
-uint64_t recomp_load16(GuestContext* c,uint64_t a){return memload(c,a,2);}
-uint64_t recomp_load32(GuestContext* c,uint64_t a){return memload(c,a,4);}
-uint64_t recomp_load64(GuestContext* c,uint64_t a){return memload(c,a,8);}
-void recomp_store8 (GuestContext* c,uint64_t a,uint64_t v){memstore(c,a,1,v);}
-void recomp_store16(GuestContext* c,uint64_t a,uint64_t v){memstore(c,a,2,v);}
-void recomp_store32(GuestContext* c,uint64_t a,uint64_t v){memstore(c,a,4,v);}
-void recomp_store64(GuestContext* c,uint64_t a,uint64_t v){memstore(c,a,8,v);}
+#define RECOMP_FM_LOAD(n, T) \
+  { uint8_t* p = _recomp_fm(c,a,n); \
+    if(RECOMP_LIKELY(p != 0)){ T v; RECOMP_MS(0, n, 1); memcpy(&v,p,n); return v; } \
+    return memload(c,a,n); }
+#define RECOMP_FM_STORE(n, T) \
+  { uint8_t* p = _recomp_fm(c,a,n); \
+    if(RECOMP_LIKELY(p != 0)){ T w = (T)v; RECOMP_MS(1, n, 1); memcpy(p,&w,n); return; } \
+    memstore(c,a,n,v); }
+uint64_t recomp_load8 (GuestContext* c,uint64_t a) RECOMP_FM_LOAD(1, uint8_t)
+uint64_t recomp_load16(GuestContext* c,uint64_t a) RECOMP_FM_LOAD(2, uint16_t)
+uint64_t recomp_load32(GuestContext* c,uint64_t a) RECOMP_FM_LOAD(4, uint32_t)
+uint64_t recomp_load64(GuestContext* c,uint64_t a) RECOMP_FM_LOAD(8, uint64_t)
+void recomp_store8 (GuestContext* c,uint64_t a,uint64_t v) RECOMP_FM_STORE(1, uint8_t)
+void recomp_store16(GuestContext* c,uint64_t a,uint64_t v) RECOMP_FM_STORE(2, uint16_t)
+void recomp_store32(GuestContext* c,uint64_t a,uint64_t v) RECOMP_FM_STORE(4, uint32_t)
+void recomp_store64(GuestContext* c,uint64_t a,uint64_t v) RECOMP_FM_STORE(8, uint64_t)
+/* acre: guest memory end */
 
 
 #ifndef RECOMP_STATIC_HOST

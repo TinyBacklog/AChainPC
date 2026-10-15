@@ -92,6 +92,11 @@ struct GuestContextView {
     // How many chained blocks the recompiled code may still run before handing
     // control back. See the note on GuestContext in core/recompiler/arm64_to_c.h.
     s32 chain_budget;
+    // Guest-memory fast path of the recompiled code: the page table and the
+    // page-aligned end of the address space it covers; 0 disables it. See
+    // recomp_load32 in core/recompiler/arm64_to_c.h.
+    const u8* fm_table;
+    u64 fm_limit;
 };
 
 // Matches RecompHostMem in the generated runtime. The recompiled code calls
@@ -123,6 +128,8 @@ static_assert(offsetof(GuestContextView, tpidr_el0) == 824);
 static_assert(offsetof(GuestContextView, host_mem) == 832);
 static_assert(offsetof(GuestContextView, tpidrro_el0) == 840);
 static_assert(offsetof(GuestContextView, chain_budget) == 848);
+static_assert(offsetof(GuestContextView, fm_table) == 856);
+static_assert(offsetof(GuestContextView, fm_limit) == 864);
 
 // A block that ends in a known successor calls it directly instead of coming
 // back here, so this bounds how long the recompiled code may run before the
@@ -666,6 +673,13 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
         static_assert(offsetof(Common::PageTable::PageEntryData, ptr) == 0);
         impl->bridge.page_table = table.entries.data();
         impl->bridge.address_space_size = u64{1} << table.GetAddressSpaceBits();
+        // The generated fast path hard-codes 4 KiB pages, 32-byte entries and
+        // two attribute bits; ACRE_NO_FM=1 turns it off for A/B measurements.
+        static_assert(Core::Memory::YUZU_PAGEBITS == 12);
+        static_assert(Common::PageTable::ATTRIBUTE_BITS == 2);
+        static const bool fm_disabled = std::getenv("ACRE_NO_FM") != nullptr;
+        impl->ctx.fm_table = reinterpret_cast<const u8*>(table.entries.data());
+        impl->ctx.fm_limit = fm_disabled ? 0 : impl->bridge.address_space_size;
         static std::atomic<bool> pt_announced{false};
         if (!pt_announced.exchange(true)) {
             LOG_INFO(Core_ARM, "recomp page table: entries={} as_bits={} fastmem={}",
@@ -675,6 +689,8 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     } else {
         impl->bridge.page_table = nullptr;
         impl->bridge.address_space_size = 0;
+        impl->ctx.fm_table = nullptr;
+        impl->ctx.fm_limit = 0;
     }
     // Logged once so it is obvious from a log whether the backend was ever
     // entered at all. A run with no errors is otherwise indistinguishable from

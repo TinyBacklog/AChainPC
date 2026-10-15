@@ -9,7 +9,7 @@ if (NOT OpenSSL_Crypto_FOUND)
                         "Install it or configure with -DACRE_TESTS=OFF.")
 endif()
 
-set(_lifter_tests adc bitfields extract fp simd crc32 recip aes sha1 sha256 satsimd chain patch)
+set(_lifter_tests adc bitfields extract fp simd crc32 recip aes sha1 sha256 satsimd chain patch fmlite fmlite_inline)
 set(_lifter_out "${CMAKE_CURRENT_BINARY_DIR}/out")
 file(MAKE_DIRECTORY "${_lifter_out}")
 

@@ -9,7 +9,7 @@
 #include "common/common_types.h"
 
 namespace Core {
-inline constexpr unsigned RecompAbiVersion = 3;
+inline constexpr unsigned RecompAbiVersion = 4;
 struct RecompModuleIdentity {
     const char* name;
     std::array<const char*, 3> sha256;
