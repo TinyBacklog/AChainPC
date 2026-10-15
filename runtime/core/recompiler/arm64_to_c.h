@@ -3786,7 +3786,9 @@ struct RecompileStats {
 // in combat it was 4% of all samples with most of that waiting on the last two
 // cache misses. The targets of indirect branches in a frame are a small, hot
 // set, so a direct-mapped cache keyed by the absolute PC answers most of them
-// with one load from a 16 KiB array that stays in L1/L2. Entries are never
+// with one load from a 128 KiB array that stays in L2. 1024 entries were too
+// few: combat still spent 3.7% in recomp_lookup on misses, 8192 brought it to
+// 0.1%. Entries are never
 // invalidated: the recompiled image is fixed for the life of the process and a
 // PC always maps to the same block. A hit may be a block of another module,
 // which is safe to call - each block reaches only its own module's globals -
@@ -3794,7 +3796,7 @@ struct RecompileStats {
 // Shared as text so the lifter tests compile exactly what the runtime does.
 #define ACRE_BLOCK_CACHE_TYPES_C R"C(/* Indirect-branch target cache; see recomp_chain_lookup. A zero entry is
    empty: no block starts at guest address 0. */
-#define RECOMP_BLOCK_CACHE 1024u
+#define RECOMP_BLOCK_CACHE 8192u
 struct GuestContext;
 typedef struct RecompBlockCacheEntry {
     uint64_t pc;

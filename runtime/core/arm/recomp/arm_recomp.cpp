@@ -104,7 +104,7 @@ struct GuestContextView {
         u64 pc;
         RecompBlockFn fn;
     };
-    static constexpr size_t kBlockCacheSize = 1024;
+    static constexpr size_t kBlockCacheSize = 8192;
     BlockCacheEntry block_cache[kBlockCacheSize];
 };
 
