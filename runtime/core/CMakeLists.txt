@@ -11,6 +11,7 @@ add_library(core STATIC
     arm/recomp/arm_recomp.h
     arm/recomp/recomp_diagnostics.cpp
     arm/recomp/recomp_diagnostics.h
+    arm/recomp/recomp_memstats.h
     arm/debug.cpp
     arm/debug.h
     arm/exclusive_monitor.cpp
@@ -1314,3 +1315,10 @@ endif()
 # endif()
 
 create_target_directory_groups(core)
+
+# Measurement build only: per-kind counts of guest accesses that reach the
+# emulator through the recompiled code's slow path (core/arm/recomp/recomp_memstats.h).
+option(ACRE_MEMSTATS "Count recompiled slow-path guest accesses by page kind (measurement only)" OFF)
+if (ACRE_MEMSTATS)
+    target_compile_definitions(core PRIVATE ACRE_MEMSTATS)
+endif()

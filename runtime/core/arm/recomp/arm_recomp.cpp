@@ -16,6 +16,7 @@
 #include "core/arm/recomp/recomp_diagnostics.h"
 #include "core/arm/recomp/recomp_identity.h"
 #include "core/arm/recomp/recomp_exclusive.h"
+#include "core/arm/recomp/recomp_memstats.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hardware_properties.h"
@@ -217,6 +218,12 @@ struct ArmRecomp::Impl {
 
     static u64 HostLoad(void* user, u64 va, u32 size) {
         auto& memory = static_cast<Impl*>(user)->system.ApplicationMemory();
+#ifdef ACRE_MEMSTATS
+        {
+            const auto& bridge = static_cast<Impl*>(user)->bridge;
+            RecompMemStats::Count(false, bridge.page_table, bridge.address_space_size, va, size);
+        }
+#endif
         switch (size) {
         case 1: return memory.Read8(va);
         case 2: return memory.Read16(va);
@@ -227,6 +234,12 @@ struct ArmRecomp::Impl {
 
     static void HostStore(void* user, u64 va, u32 size, u64 value) {
         auto& memory = static_cast<Impl*>(user)->system.ApplicationMemory();
+#ifdef ACRE_MEMSTATS
+        {
+            const auto& bridge = static_cast<Impl*>(user)->bridge;
+            RecompMemStats::Count(true, bridge.page_table, bridge.address_space_size, va, size);
+        }
+#endif
         switch (size) {
         case 1: memory.Write8(va, static_cast<u8>(value)); break;
         case 2: memory.Write16(va, static_cast<u16>(value)); break;
@@ -683,6 +696,9 @@ HaltReason ArmRecomp::RunFallback(Kernel::KThread* thread) {
 
 HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     if (impl->exclusive_monitor) impl->exclusive_monitor->ClearExclusive(impl->core_index);
+#ifdef ACRE_MEMSTATS
+    RecompMemStats::MaybeReport();
+#endif
     // Publish the running process's page table so the recompiled code can
     // resolve ordinary loads and stores without a call back into the emulator.
     // Refreshed on every entry because the table belongs to the process, and
