@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
 #include <mutex>
 #include <unordered_set>
 #include <string>
@@ -16,6 +17,7 @@
 #include "core/arm/recomp/recomp_diagnostics.h"
 #include "core/arm/recomp/recomp_identity.h"
 #include "core/arm/recomp/recomp_exclusive.h"
+#include "core/arm/recomp/recomp_fastmem.h"
 #include "core/arm/recomp/recomp_memstats.h"
 #include "core/core.h"
 #include "core/core_timing.h"
@@ -52,6 +54,100 @@ struct DispatchProfile {
     }
 };
 DispatchProfile g_dispatch_profile;
+}  // namespace
+#include <dynarmic/interface/signal_handler.h>
+#include "common/logging/log.h"
+
+namespace {
+// Fastmem arena (FM2) of the recompiled code's inline guest accesses: decided
+// once per process on the first entry of any core, checked again on each
+// core's first entry and once a second while the guest runs. Turning it off
+// stores 0 to every limit word, after which the inline accesses all call the
+// helpers and never read the arena. See core/arm/recomp/recomp_fastmem.h.
+class Fastmem {
+public:
+    // The arena to publish in the context: the process's, or null when off.
+    u8* Arena(u8* arena) {
+        std::call_once(decided, [this, arena] { Decide(arena); });
+        return on.load(std::memory_order_relaxed) ? arena : nullptr;
+    }
+
+    // A thread with SIGSEGV or SIGBUS blocked would be killed by its first
+    // recovered fault instead of reaching the handler.
+    void CheckThread() {
+        if (on.load(std::memory_order_relaxed) && !acre_fm_thread_can_fault()) {
+            TurnOff("a CPU thread blocks SIGSEGV or SIGBUS");
+        }
+    }
+
+    void Tick() {
+        if (!on.load(std::memory_order_relaxed)) return;
+        using namespace std::chrono;
+        const long long now = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        long long last = last_tick_ns.load(std::memory_order_relaxed);
+        if (now - last < 1'000'000'000LL ||
+            !last_tick_ns.compare_exchange_strong(last, now, std::memory_order_relaxed)) {
+            return;
+        }
+        if (!acre_fm_handler_is_ours()) {
+            TurnOff("another SIGSEGV handler was installed above FM2's");
+            return;
+        }
+        const unsigned long faults = acre_fm_faults(), demotions = acre_fm_demotions();
+        if (faults != last_faults || demotions != last_demotions) {
+            LOG_INFO(Core_ARM, "fm2: {} faults in {:.1f}s, {} functions demoted so far",
+                     faults - last_faults, last == 0 ? 0.0 : (now - last) / 1e9, demotions);
+            last_faults = faults;
+            last_demotions = demotions;
+        }
+    }
+
+private:
+    void Decide(u8* arena) {
+        const char* why = nullptr;
+        if (!acre_fm_configured_enabled()) {
+            why = "fastmem = false in astralchain.ini";
+        } else if (std::getenv("ACRE_NO_FASTMEM")) {
+            why = "ACRE_NO_FASTMEM is set";
+        } else if (!arena) {
+            why = "the emulator has no fastmem arena";
+        } else if (reinterpret_cast<uintptr_t>(arena) & 0xFFF) {
+            why = "the arena is not page aligned";
+        }
+        if (why) {
+            acre_fm_set_all_limits(0);
+            LOG_INFO(Core_ARM, "fm2: off, {}", why);
+            return;
+        }
+        // dynarmic's handler goes in first, so ours sits above it.
+        switch (acre_fm_install(+[]() -> int { return Dynarmic::InstallFaultHandler() ? 1 : 0; })) {
+        case 0:
+            on.store(true, std::memory_order_relaxed);
+            LOG_INFO(Core_ARM, "fm2: on, {} inline accesses in {} functions, table built in {:.1f} ms",
+                     acre_fm_table_entries(), acre_fm_limit_words(), acre_fm_init_seconds() * 1e3);
+            break;
+        case 1:
+            LOG_INFO(Core_ARM, "fm2: off, this build has no inline accesses");
+            break;
+        default:
+            LOG_ERROR(Core_ARM, "fm2: off, the exception table or the signal handler could not be set up");
+            break;
+        }
+    }
+
+    void TurnOff(const char* why) {
+        if (on.exchange(false, std::memory_order_relaxed)) {
+            acre_fm_set_all_limits(0);
+            LOG_ERROR(Core_ARM, "fm2: off, {}", why);
+        }
+    }
+
+    std::once_flag decided;
+    std::atomic<bool> on{false};
+    std::atomic<long long> last_tick_ns{0};
+    unsigned long last_faults = 0, last_demotions = 0; // written by the Tick that wins the exchange
+};
+Fastmem g_fastmem;
 }  // namespace
 #include "core/hle/kernel/k_thread.h"
 #include "core/hle/kernel/k_process.h"
@@ -107,6 +203,9 @@ struct GuestContextView {
     };
     static constexpr size_t kBlockCacheSize = 8192;
     BlockCacheEntry block_cache[kBlockCacheSize];
+    // Fastmem arena of the inline accesses (FM2); null turns them off. See
+    // core/arm/recomp/recomp_fastmem_access.h.
+    u8* fm_arena;
 };
 
 // Matches RecompHostMem in the generated runtime. The recompiled code calls
@@ -142,6 +241,7 @@ static_assert(offsetof(GuestContextView, fm_table) == 856);
 static_assert(offsetof(GuestContextView, fm_limit) == 864);
 static_assert(offsetof(GuestContextView, block_cache) == 872);
 static_assert(sizeof(GuestContextView::BlockCacheEntry) == 16);
+static_assert(offsetof(GuestContextView, fm_arena) == 131944);
 
 // A block that ends in a known successor calls it directly instead of coming
 // back here, so this bounds how long the recompiled code may run before the
@@ -627,6 +727,8 @@ struct ArmRecomp::Impl {
     bool uses_wall_clock{};
     std::unique_ptr<ArmDynarmic64> fallback{};
     bool in_fallback{false};
+    // Whether this core's host thread passed Fastmem::CheckThread.
+    bool fastmem_thread_checked{false};
     bool fallback_unavailable{false};
 };
 
@@ -716,6 +818,12 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
         static const bool fm_disabled = std::getenv("ACRE_NO_FM") != nullptr;
         impl->ctx.fm_table = reinterpret_cast<const u8*>(table.entries.data());
         impl->ctx.fm_limit = fm_disabled ? 0 : impl->bridge.address_space_size;
+        impl->ctx.fm_arena = g_fastmem.Arena(table.fastmem_arena);
+        if (!impl->fastmem_thread_checked) {
+            g_fastmem.CheckThread();
+            impl->fastmem_thread_checked = true;
+        }
+        g_fastmem.Tick();
         static std::atomic<bool> pt_announced{false};
         if (!pt_announced.exchange(true)) {
             LOG_INFO(Core_ARM, "recomp page table: entries={} as_bits={} fastmem={}",
@@ -727,6 +835,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
         impl->bridge.address_space_size = 0;
         impl->ctx.fm_table = nullptr;
         impl->ctx.fm_limit = 0;
+        impl->ctx.fm_arena = nullptr;
     }
     // Logged once so it is obvious from a log whether the backend was ever
     // entered at all. A run with no errors is otherwise indistinguishable from

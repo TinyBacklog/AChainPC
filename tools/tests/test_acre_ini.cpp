@@ -65,6 +65,24 @@ int main() {
         CHECK(HasWarning(ini, "blurry"));
     }
     {
+        const AcreIni ini = ParseAcreIni("");
+        CHECK(ini.fastmem);
+        CHECK(ini.fastmem_demote_after == 16);
+    }
+    {
+        const AcreIni ini = ParseAcreIni("[performance]\nfastmem = false\nfastmem_demote_after = 0\n");
+        CHECK(!ini.fastmem);
+        CHECK(ini.fastmem_demote_after == 0);
+        CHECK(ini.warnings.empty());
+    }
+    {
+        const AcreIni ini = ParseAcreIni("[performance]\nfastmem = maybe\nfastmem_demote_after = -3\n");
+        CHECK(ini.fastmem);
+        CHECK(ini.fastmem_demote_after == 16);
+        CHECK(HasWarning(ini, "maybe"));
+        CHECK(HasWarning(ini, "fastmem_demote_after"));
+    }
+    {
         const AcreIni ini = ParseAcreIni("[audio]\nvolume = 150\n");
         CHECK(ini.volume == 100);
         CHECK(HasWarning(ini, "volume"));

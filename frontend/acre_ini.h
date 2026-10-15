@@ -18,6 +18,12 @@ struct AcreIni {
     int volume = 100;
     /// 60fps patch (game/patches/fps60.patches). Read once at start-up.
     bool fps60 = false;
+    /// Inline guest memory accesses in the recompiled code (FM2), in builds
+    /// that have them. false = every access through the emulator's helpers.
+    bool fastmem = true;
+    /// Faults of one inline access before its function falls back to the
+    /// helpers for the rest of the session; 0 = never.
+    int fastmem_demote_after = 16;
     /// Internal resolution multiplier, 1-4.
     int resolution_scale = 1;
     /// nearest, bilinear, bicubic, gaussian, scaleforce or fsr.

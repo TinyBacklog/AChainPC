@@ -30,6 +30,11 @@ void acre_fm_set_all_limits(uint64_t v);
 /* Faults of one access before its function is demoted; 0 = never. */
 void acre_fm_set_demote_after(unsigned n);
 
+/* Player settings (astralchain.ini), applied before the guest starts:
+   whether FM2 may be used at all, and the demotion threshold. */
+void acre_fm_configure(int enabled, unsigned demote_after);
+int acre_fm_configured_enabled(void);
+
 unsigned long acre_fm_faults(void);    /* faults recovered so far */
 unsigned long acre_fm_demotions(void); /* limit words set to 0 by the handler */
 size_t acre_fm_table_entries(void);

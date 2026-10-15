@@ -129,6 +129,15 @@ AcreIni ParseAcreIni(const std::string& text) {
                 }
             } else if (section == "performance" && key == "fps60") {
                 if (!ParseBool(value, ini.fps60)) warn(section, key, "expected true or false, got '" + value + "'");
+            } else if (section == "performance" && key == "fastmem") {
+                if (!ParseBool(value, ini.fastmem)) warn(section, key, "expected true or false, got '" + value + "'");
+            } else if (section == "performance" && key == "fastmem_demote_after") {
+                int after = 0;
+                if (!ParseInt(value, after) || after < 0) {
+                    warn(section, key, "expected 0 or more, got '" + value + "'");
+                } else {
+                    ini.fastmem_demote_after = after;
+                }
             } else if (section == "performance" && key == "resolution_scale") {
                 int scale = 0;
                 if (!ParseInt(value, scale) || scale < 1 || scale > 4) {

@@ -4591,6 +4591,10 @@ typedef struct GuestContext {
     /* Indirect-branch target cache, owned by whoever drives the code; zeroed
        is empty. See recomp_chain_lookup. */
     RecompBlockCacheEntry block_cache[RECOMP_BLOCK_CACHE];
+    /* Fastmem arena (FM2): host address of guest address 0, where every
+       mapped guest page appears with its access rights; NULL when FM2 is off.
+       Read by the inline accesses of recomp_fastmem_access.h. */
+    uint8_t* fm_arena;
     /* Save-data filesystem state */
     char save_dir[512];
     /* Heap break for SVC memory allocation */
@@ -4624,6 +4628,7 @@ typedef char recomp_layout_chain[offsetof(GuestContext, chain_budget) == 848 ? 1
 typedef char recomp_layout_fmtable[offsetof(GuestContext, fm_table) == 856 ? 1 : -1];
 typedef char recomp_layout_fmlimit[offsetof(GuestContext, fm_limit) == 864 ? 1 : -1];
 typedef char recomp_layout_bcache[offsetof(GuestContext, block_cache) == 872 && sizeof(RecompBlockCacheEntry) == 16 ? 1 : -1];
+typedef char recomp_layout_fmarena[offsetof(GuestContext, fm_arena) == 131944 ? 1 : -1];
 
 /* Where this module is actually loaded in the guest's address space.
    Every address the static pass bakes in - ADR/ADRP results, branch targets,

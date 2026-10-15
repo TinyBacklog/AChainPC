@@ -46,6 +46,7 @@ size_t g_count;
 uintptr_t g_base;
 std::atomic<unsigned long> g_faults{0}, g_demotions{0};
 std::atomic<unsigned> g_demote_after{16};
+std::atomic<int> g_enabled{1};
 double g_init_seconds;
 struct sigaction g_prev_segv, g_prev_bus;
 int g_install_result = -1;
@@ -167,6 +168,15 @@ void acre_fm_set_all_limits(uint64_t v) {
 
 void acre_fm_set_demote_after(unsigned n) {
     g_demote_after.store(n, std::memory_order_relaxed);
+}
+
+void acre_fm_configure(int enabled, unsigned demote_after) {
+    g_enabled.store(enabled != 0, std::memory_order_relaxed);
+    acre_fm_set_demote_after(demote_after);
+}
+
+int acre_fm_configured_enabled(void) {
+    return g_enabled.load(std::memory_order_relaxed);
 }
 
 unsigned long acre_fm_faults(void) {

@@ -7,6 +7,7 @@
 #include "common/logging/log.h"
 #include "common/settings.h"
 #include "common/settings_input.h"
+#include "core/arm/recomp/recomp_fastmem.h"
 #include "frontend/acre_ini_apply.h"
 #include "frontend/sdl_config.h"
 #include "input_common/main.h"
@@ -101,6 +102,7 @@ void ApplyAcreIni(const AcreIni& ini) {
                                                    : Settings::VSyncMode::Immediate);
     Settings::values.volume.SetValue(static_cast<u8>(ini.volume));
     acre_fps60 = ini.fps60 ? 1 : 0;
+    acre_fm_configure(ini.fastmem ? 1 : 0, static_cast<unsigned>(ini.fastmem_demote_after));
     Settings::values.resolution_setup.SetValue(ResolutionFor(ini.resolution_scale));
     Settings::values.scaling_filter.SetValue(FilterFor(ini.scaling_filter));
 
@@ -114,8 +116,9 @@ void ApplyAcreIni(const AcreIni& ini) {
         Bind(player, name, param);
     }
     LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
-             "fps60={}, resolution_scale={}, scaling_filter={}",
-             ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60,
+             "fps60={}, fastmem={}, fastmem_demote_after={}, resolution_scale={}, scaling_filter={}",
+             ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60, ini.fastmem,
+             ini.fastmem_demote_after,
              ini.resolution_scale, ini.scaling_filter);
 }
 
