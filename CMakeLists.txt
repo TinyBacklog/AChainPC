@@ -705,6 +705,11 @@ endif()
 # multiply and add into one rounding, which AArch64 FMUL+FADD do not do.
 set(ACRE_RECOMP_ARCH "x86-64-v3" CACHE STRING "-march for the lifted guest code (needs a CPU that supports it)")
 set(ACRE_RECOMP_C_FLAGS "-march=${ACRE_RECOMP_ARCH}" "-ffp-contract=off")
+# Fastmem arena (FM2): the lifted code's guest accesses become inline loads and
+# stores into the emulator's fastmem arena, recovered from faults by
+# core/arm/recomp/recomp_fastmem.cpp. Linux x86-64 and clang only. See
+# docs/superpowers/specs/2026-10-15-fastmem-arena-design.md.
+option(ACRE_FASTMEM "Inline guest memory accesses in the lifted code (FM2)" OFF)
 
 add_subdirectory(runtime)
 add_subdirectory(recompiler)

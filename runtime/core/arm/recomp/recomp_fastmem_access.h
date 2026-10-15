@@ -35,9 +35,10 @@ typedef uint16_t __attribute__((may_alias)) recomp_fx_u16;
 typedef uint32_t __attribute__((may_alias)) recomp_fx_u32;
 typedef uint64_t __attribute__((may_alias)) recomp_fx_u64;
 
-/* One per function that accesses guest memory, before its first access. */
+/* One per function, before its first access. A function without accesses
+   never references its word, and the compiler drops it. */
 #define RECOMP_BLOCK_LIMIT \
-    static uint64_t recomp_fm_lim __attribute__((section("acre_fml"), aligned(8), used)) = RECOMP_FM_LIMIT_INIT
+    static uint64_t recomp_fm_lim __attribute__((section("acre_fml"), aligned(8), unused)) = RECOMP_FM_LIMIT_INIT
 
 #define RECOMP_FX_ENTRY                                                   \
     ".pushsection acre_fmx,\"a\"\n\t.balign 4\n\t"                        \

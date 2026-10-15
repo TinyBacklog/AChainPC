@@ -4065,7 +4065,7 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
         FuncNameTo(namebuf, mod.c_str(), b.vaddr);
         rcu += "void ";
         rcu += namebuf;
-        rcu += "(GuestContext* c){\n";
+        rcu += "(GuestContext* c){\n    RECOMP_BLOCK_LIMIT;\n";
         const u32 first = (u32)((b.vaddr - base) / 4);
         bool open = true;
         std::string block_body;
@@ -4722,12 +4722,41 @@ int  recomp_save_delete(GuestContext* c, const char* name);
 int  recomp_save_exists(GuestContext* c, const char* name);
 /* Load bundled data segments into guest memory */
 int  recomp_load_segments(GuestContext* c, const char* data_dir);
+/* Fastmem arena (FM2). With RECOMP_FASTMEM the guest accesses of the
+   recompiled code become inline loads and stores into the arena
+   (core/arm/recomp/recomp_fastmem_access.h in the emulator's tree), with the
+   helpers above as their slow path. Each block function declares its own
+   limit word (RECOMP_BLOCK_LIMIT); other code uses this file's. The helpers'
+   own definitions (recomp_runtime.c) never see the redirection. */
+#if defined(RECOMP_FASTMEM) && !defined(RECOMP_RUNTIME_IMPL)
+#define RECOMP_FX_CTX GuestContext
+#define RECOMP_FX_ARENA(c) ((c)->fm_arena)
+#define RECOMP_FX_SLOW_LOAD(c, a, n) \
+    ((n) == 1 ? (recomp_load8)(c, a) : (n) == 2 ? (recomp_load16)(c, a) : \
+     (n) == 4 ? (recomp_load32)(c, a) : (recomp_load64)(c, a))
+#define RECOMP_FX_SLOW_STORE(c, a, n, v) \
+    ((n) == 1 ? (recomp_store8)(c, a, v) : (n) == 2 ? (recomp_store16)(c, a, v) : \
+     (n) == 4 ? (recomp_store32)(c, a, v) : (recomp_store64)(c, a, v))
+#include "core/arm/recomp/recomp_fastmem_access.h"
+static uint64_t recomp_fm_lim __attribute__((section("acre_fml"), aligned(8), unused)) = RECOMP_FM_LIMIT_INIT;
+#define recomp_load8(c, a) RECOMP_FX_LD8(c, a)
+#define recomp_load16(c, a) RECOMP_FX_LD16(c, a)
+#define recomp_load32(c, a) RECOMP_FX_LD32(c, a)
+#define recomp_load64(c, a) RECOMP_FX_LD64(c, a)
+#define recomp_store8(c, a, v) RECOMP_FX_ST8(c, a, v)
+#define recomp_store16(c, a, v) RECOMP_FX_ST16(c, a, v)
+#define recomp_store32(c, a, v) RECOMP_FX_ST32(c, a, v)
+#define recomp_store64(c, a, v) RECOMP_FX_ST64(c, a, v)
+#else
+#define RECOMP_BLOCK_LIMIT ((void)0)
+#endif
 #endif
 )RT";
 }
 
 inline const char* RuntimeC() {
-    return R"RT(#include "recomp_runtime.h"
+    return R"RT(#define RECOMP_RUNTIME_IMPL 1
+#include "recomp_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
