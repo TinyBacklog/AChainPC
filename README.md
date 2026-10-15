@@ -19,7 +19,8 @@ your own dump of the game with update 1.0.1 applied, plus your own console keys.
 - **M3 (playable at 30 fps):** done. `astralchain.ini` holds the controls, display and audio
   settings, and saves live in `$XDG_DATA_HOME/astralchain/`. The play checklist
   (`docs/checklist.md`) passed with 0 fallbacks.
-- **Next:** M4 (60 fps and internal resolution), then M5 (ImGui overlay).
+- **M4 (60 fps and internal resolution):** in progress.
+- **Next:** M5 (ImGui overlay).
 
 See `docs/superpowers/specs/2026-10-14-astralchainre-design.md` for the design and roadmap.
 
@@ -120,6 +121,22 @@ then compiles and runs it.
 | `game/` | Supported version hashes, extra roots |
 | `tools/import-runtime.sh` | Script that produced the vendored runtime |
 | `work/` | Local exports and builds (ignored by git) |
+
+## Legal: bring your own copy
+
+This project ships tools and a runtime, never the game.
+
+- The repository contains no game code, assets, keys or saves. What it holds about the game
+  is metadata needed to check and patch your own copy: module hashes (`game/version.json`),
+  code entry addresses (`game/roots/`), and patch offsets with the few instruction words they
+  replace (`game/patches/`).
+- You need a copy of the game and console keys that you dumped yourself from your own
+  Switch. This project does not explain how to get either, and issues asking for them are
+  closed.
+- A built `astralchain-static` contains the game's code, translated from your dump. **Do not
+  share builds, exports or anything under `work/`.** Share source changes only.
+- *Astral Chain* is a trademark of its owners. This project is not affiliated with or
+  endorsed by Nintendo or PlatinumGames.
 
 ## License
 

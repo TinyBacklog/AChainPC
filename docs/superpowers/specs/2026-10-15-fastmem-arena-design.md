@@ -413,9 +413,8 @@ essa fase, contra a baseline da secção 1.5.
 | 40 | 95.3% |
 
 - Total: 472 stacks distintas.
-- Os dois primeiros são os dois loads de 64 bits de um loop de comparação do SDK
-  (`blk_sdk_4a7b00`: `ldr x11,[x0,x9]`, `ldr x10,[x1,x9]`, `eor`), ou seja um
-  `memcmp` sobre memória que a GPU segue.
+- Os dois primeiros são os dois loads de 64 bits de um loop de comparação do SDK,
+  do tipo `memcmp`, sobre memória que a GPU segue.
 - **Consequência:** com despromoção por função, cada sítio paga no máximo N
   faults e passa ao helper. Com ~500 sítios e N = 16: ~8k faults **uma vez**,
   ~5 ms no total. O gate passa.
