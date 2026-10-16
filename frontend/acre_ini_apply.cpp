@@ -20,13 +20,14 @@ volatile int acre_fps60 = 0;
 namespace {
 int g_display_index = 0;
 
-Settings::ResolutionSetup ResolutionFor(int scale) {
-    switch (scale) {
-    case 2: return Settings::ResolutionSetup::Res2X;
-    case 3: return Settings::ResolutionSetup::Res3X;
-    case 4: return Settings::ResolutionSetup::Res4X;
-    default: return Settings::ResolutionSetup::Res1X;
-    }
+Settings::ResolutionSetup ResolutionFor(std::string_view scale) {
+    if (scale == "0.5") return Settings::ResolutionSetup::Res1_2X;
+    if (scale == "0.75") return Settings::ResolutionSetup::Res3_4X;
+    if (scale == "1.5") return Settings::ResolutionSetup::Res3_2X;
+    if (scale == "2") return Settings::ResolutionSetup::Res2X;
+    if (scale == "3") return Settings::ResolutionSetup::Res3X;
+    if (scale == "4") return Settings::ResolutionSetup::Res4X;
+    return Settings::ResolutionSetup::Res1X;
 }
 
 Settings::ScalingFilter FilterFor(std::string_view name) {

@@ -139,11 +139,12 @@ AcreIni ParseAcreIni(const std::string& text) {
                     ini.fastmem_demote_after = after;
                 }
             } else if (section == "performance" && key == "resolution_scale") {
-                int scale = 0;
-                if (!ParseInt(value, scale) || scale < 1 || scale > 4) {
-                    warn(section, key, "expected 1-4, got '" + value + "'");
+                static constexpr std::array<std::string_view, 7> scales{"0.5", "0.75", "1", "1.5",
+                                                                        "2",   "3",    "4"};
+                if (std::find(scales.begin(), scales.end(), value) != scales.end()) {
+                    ini.resolution_scale = value;
                 } else {
-                    ini.resolution_scale = scale;
+                    warn(section, key, "expected 0.5, 0.75, 1, 1.5, 2, 3 or 4, got '" + value + "'");
                 }
             } else if (section == "performance" && key == "scaling_filter") {
                 static constexpr std::array<std::string_view, 6> filters{

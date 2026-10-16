@@ -46,23 +46,32 @@ int main() {
     {
         const AcreIni ini = ParseAcreIni("");
         CHECK(!ini.fps60);
-        CHECK(ini.resolution_scale == 1);
+        CHECK(ini.resolution_scale == "1");
         CHECK(ini.scaling_filter == "fsr");
     }
     {
         const AcreIni ini = ParseAcreIni("[performance]\nfps60 = true\nresolution_scale = 2\n"
                                          "scaling_filter = bilinear\n");
         CHECK(ini.fps60);
-        CHECK(ini.resolution_scale == 2);
+        CHECK(ini.resolution_scale == "2");
         CHECK(ini.scaling_filter == "bilinear");
         CHECK(ini.warnings.empty());
     }
     {
         const AcreIni ini = ParseAcreIni("[performance]\nresolution_scale = 9\nscaling_filter = blurry\n");
-        CHECK(ini.resolution_scale == 1);
+        CHECK(ini.resolution_scale == "1");
         CHECK(ini.scaling_filter == "fsr");
         CHECK(HasWarning(ini, "resolution_scale"));
         CHECK(HasWarning(ini, "blurry"));
+    }
+    {
+        // Fractional scales: below native to find a CPU limit, 1.5 for 1620p.
+        for (const char* scale : {"0.5", "0.75", "1.5"}) {
+            const AcreIni ini =
+                ParseAcreIni(std::string("[performance]\nresolution_scale = ") + scale + "\n");
+            CHECK(ini.resolution_scale == scale);
+            CHECK(ini.warnings.empty());
+        }
     }
     {
         const AcreIni ini = ParseAcreIni("");

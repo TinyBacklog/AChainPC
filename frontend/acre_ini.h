@@ -25,7 +25,7 @@ struct AcreIni {
     /// helpers for the rest of the session; 0 = never.
     int fastmem_demote_after = 16;
     /// Internal resolution multiplier, 1-4.
-    int resolution_scale = 1;
+    std::string resolution_scale = "1"; // 0.5, 0.75, 1, 1.5, 2, 3 or 4
     /// nearest, bilinear, bicubic, gaussian, scaleforce or fsr.
     std::string scaling_filter = "fsr";
     /// steam_controller, keyboard or custom.
