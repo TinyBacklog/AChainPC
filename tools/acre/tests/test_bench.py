@@ -53,6 +53,14 @@ class BenchTest(unittest.TestCase):
         self.assertIn("IPC 2.50", lines[0])
         self.assertEqual(lines[1], "b: no measurement")
 
+    def test_summary_counts_hung_runs(self):
+        results = [bench.RunResult("a", 0, bench.FpsWindow(46.0, 44.0, 48.0, 2)),
+                   bench.RunResult("a", 1, None, hung=True),
+                   bench.RunResult("b", 0, None, hung=True)]
+        lines = bench.summarize(results)
+        self.assertIn("1 run(s) HUNG", lines[0])
+        self.assertEqual(lines[1], "b: no measurement, 1 hung")
+
 
 if __name__ == "__main__":
     unittest.main()
