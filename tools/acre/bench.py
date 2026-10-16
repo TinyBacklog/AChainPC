@@ -2,7 +2,9 @@
 
 Each run starts from a fresh copy of a profile snapshot (so saves never drift
 between runs and the player's own profile is never touched), plays the script
-on player 1, waits for the frontend's "tas: script finished" line, lets the
+on player 1, waits for the frontend's "tas: script finished" line (the
+frontend also saves that frame as finish.png, kept beside the run's log, to
+check that every run ended in the same place), lets the
 scene settle, then measures the game's frame rate from the log and, when perf
 is available, CPU counters for a fixed window. Builds alternate run by run
 (A B A B ...), so a slow drift of the machine hits both alike.
@@ -23,6 +25,9 @@ BENCH_DIR = config.WORK / "bench"
 # The frontend logs a frame-rate line every 2 s; a log that stops growing for
 # this long means the game stopped presenting.
 HANG_SECONDS = 45
+# The frame rate a sample must reach to count as on target (60 fps, with the
+# frontend's rounding).
+TARGET_FPS = 59.5
 PERF_EVENTS = ["task-clock", "cycles", "instructions", "stalled-cycles-frontend", "L1-icache-load-misses"]
 
 _STAMP = re.compile(r"\[\s*(\d+\.\d+)\]")
@@ -55,6 +60,7 @@ class FpsWindow:
     low: float
     high: float
     samples: int
+    at_target: float  # share of samples at TARGET_FPS or above
 
 
 def fps_window(samples: list[tuple[float, float]], start: float, end: float) -> FpsWindow | None:
@@ -62,7 +68,8 @@ def fps_window(samples: list[tuple[float, float]], start: float, end: float) -> 
     values = [fps for t, fps in samples if start <= t < end]
     if not values:
         return None
-    return FpsWindow(statistics.fmean(values), min(values), max(values), len(values))
+    at_target = sum(1 for fps in values if fps >= TARGET_FPS) / len(values)
+    return FpsWindow(statistics.fmean(values), min(values), max(values), len(values), at_target)
 
 
 def parse_perf(text: str) -> dict[str, float]:
@@ -154,6 +161,9 @@ def run_one(binary: Path, index: int, snapshot: Path, script: Path, ini: Path, r
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+    shot = profile / "tas" / "finish.png"
+    if shot.is_file():
+        shutil.copyfile(shot, out_dir / name / "finish.png")
     samples = fps_samples(log.read_text(errors="replace"))
     window = fps_window(samples, finished + settle, finished + settle + seconds)
     return RunResult(str(binary), index, window, parse_perf(perf_text), str(log))
@@ -169,7 +179,8 @@ def summarize(results: list[RunResult]) -> list[str]:
             continue
         means = [r.fps.mean for r in runs]
         line = (f"{binary}: fps mean {statistics.fmean(means):.1f} over {len(runs)} runs "
-                f"(runs {', '.join(f'{m:.1f}' for m in means)}; low {min(r.fps.low for r in runs):.1f})")
+                f"(runs {', '.join(f'{m:.1f}' for m in means)}; low {min(r.fps.low for r in runs):.1f}; "
+                f"at 60: {statistics.fmean(r.fps.at_target for r in runs):.0%})")
         perf = [r.perf for r in runs if "cycles" in r.perf and "instructions" in r.perf]
         if perf:
             cycles = statistics.fmean(p["cycles"] for p in perf)

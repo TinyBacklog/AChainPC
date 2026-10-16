@@ -35,7 +35,12 @@ class BenchTest(unittest.TestCase):
         self.assertEqual(window.samples, 2)
         self.assertAlmostEqual(window.mean, 46.0)
         self.assertEqual((window.low, window.high), (44.0, 48.0))
+        self.assertEqual(window.at_target, 0.0)
         self.assertIsNone(bench.fps_window(bench.fps_samples(LOG), 300, 340))
+
+    def test_window_counts_samples_at_target(self):
+        samples = [(0.0, 60.0), (2.0, 59.6), (4.0, 59.4), (6.0, 30.0)]
+        self.assertEqual(bench.fps_window(samples, 0, 8).at_target, 0.5)
 
     def test_parse_perf_skips_unsupported(self):
         counters = bench.parse_perf(PERF)
@@ -44,17 +49,18 @@ class BenchTest(unittest.TestCase):
         self.assertNotIn("stalled-cycles-frontend", counters)
 
     def test_summary_reports_mean_and_ipc(self):
-        window = bench.FpsWindow(46.0, 44.0, 48.0, 2)
+        window = bench.FpsWindow(46.0, 44.0, 48.0, 2, 0.5)
         results = [bench.RunResult("a", 0, window, {"cycles": 100e9, "instructions": 250e9}),
-                   bench.RunResult("a", 1, bench.FpsWindow(42.0, 40.0, 44.0, 2), {}),
+                   bench.RunResult("a", 1, bench.FpsWindow(42.0, 40.0, 44.0, 2, 0.0), {}),
                    bench.RunResult("b", 0, None)]
         lines = bench.summarize(results)
         self.assertIn("fps mean 44.0 over 2 runs", lines[0])
         self.assertIn("IPC 2.50", lines[0])
+        self.assertIn("at 60: 25%", lines[0])
         self.assertEqual(lines[1], "b: no measurement")
 
     def test_summary_counts_hung_runs(self):
-        results = [bench.RunResult("a", 0, bench.FpsWindow(46.0, 44.0, 48.0, 2)),
+        results = [bench.RunResult("a", 0, bench.FpsWindow(46.0, 44.0, 48.0, 2, 0.0)),
                    bench.RunResult("a", 1, None, hung=True),
                    bench.RunResult("b", 0, None, hung=True)]
         lines = bench.summarize(results)
