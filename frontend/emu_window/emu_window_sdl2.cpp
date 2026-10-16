@@ -673,6 +673,9 @@ void EmuWindow_SDL2::WaitEvent() {
     // SDL can leave errors from optional device discovery while pumping events;
     // a timeout must not terminate an otherwise healthy game because of them.
     if (!SDL_WaitEventTimeout(&event, 100)) {
+        // No event is the normal case for a window nobody touches (a benchmark
+        // replaying a script), so the periodic report cannot wait for one.
+        ReportPerformance();
         return;
     }
 
@@ -736,6 +739,10 @@ void EmuWindow_SDL2::WaitEvent() {
         break;
     }
 
+    ReportPerformance();
+}
+
+void EmuWindow_SDL2::ReportPerformance() {
     const u64 current_time = SDL_GetTicks();
     if (current_time > last_time + 2000) {
         const auto results = system.GetAndResetPerfStats();

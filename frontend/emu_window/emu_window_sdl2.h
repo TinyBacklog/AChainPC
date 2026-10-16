@@ -48,6 +48,9 @@ public:
     void SetWindowIcon();
 
 protected:
+    /// Every 2 s: frame rate in the title bar (and the log, with --show-fps).
+    void ReportPerformance();
+
     /// Called by WaitEvent when a key is pressed or released.
     void OnKeyEvent(int key, u8 state);
 

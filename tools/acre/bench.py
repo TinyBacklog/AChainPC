@@ -181,6 +181,16 @@ def summarize(results: list[RunResult]) -> list[str]:
     return lines
 
 
+def session_locked() -> bool:
+    """True when the desktop session is locked: the game window then gets no
+    frames, and a script never advances."""
+    if not shutil.which("loginctl"):
+        return False
+    result = subprocess.run(["loginctl", "show-session", "auto", "-p", "LockedHint", "--value"],
+                            capture_output=True, text=True)
+    return result.stdout.strip() == "yes"
+
+
 def run(binaries: list[Path], script: Path, runs: int, snapshot: Path, ini: Path, settle: int,
         seconds: int) -> None:
     for binary in binaries:
@@ -190,11 +200,15 @@ def run(binaries: list[Path], script: Path, runs: int, snapshot: Path, ini: Path
         if not path.exists():
             config.fail(config.EXIT_USAGE, f"{what}: {path} not found")
     record = config.load(config.WORK)
+    if session_locked():
+        config.fail(config.EXIT_USAGE, "the desktop session is locked; the game window would get no frames")
     out_dir = BENCH_DIR / "runs" / time.strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True)
     results = []
     for index in range(runs):
         for binary in binaries:
+            if session_locked():
+                config.fail(config.EXIT_VALIDATE_FAILED, "the desktop session got locked; stopping")
             result = run_one(binary.resolve(), index, snapshot, script, ini, record, settle, seconds, out_dir)
             fps = "HUNG" if result.hung else f"{result.fps.mean:.1f} fps" if result.fps else "no fps"
             print(f"run {index + 1}/{runs} {binary}: {fps}", flush=True)
