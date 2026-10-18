@@ -215,6 +215,9 @@ public:
 
     void RendererFrameEndNotify();
 
+    /// Frames the renderer has finished so far; any thread may read it.
+    [[nodiscard]] u64 FramesEnded() const;
+
     void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
                           std::vector<Service::Nvidia::NvFence>&& fences);
 

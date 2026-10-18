@@ -29,6 +29,7 @@
 #include "core/hle/kernel/k_page_table.h"
 #include "core/hle/kernel/k_process.h"
 #include "core/memory.h"
+#include "core/rasterizer_read_cache.h"
 #include "video_core/gpu.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/host1x/host1x.h"
@@ -684,19 +685,14 @@ struct Memory::Impl {
         }
         const size_t core = system.GetCurrentHostThreadID();
         auto& cache = rasterizer_read_areas[core];
+        const u64 frame = system.GPU().FramesEnded();
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
-            for (const auto& area : cache.areas) {
-                if (area.start_address <= address && end_address <= area.end_address) {
-                    return;
-                }
+            if (cache.Contains(address, end_address, frame)) {
+                return;
             }
-            // A miss locks the texture cache, which the GPU thread holds for long
-            // stretches. Games read back and forth between a few pages (a memcmp
-            // of two buffers), so one remembered area per core missed nearly
-            // every time.
-            cache.areas[cache.next] = system.GPU().OnCPURead(address, size);
-            cache.next = (cache.next + 1) % cache.areas.size();
+            const auto area = system.GPU().OnCPURead(address, size);
+            cache.Insert(area.start_address, area.end_address, frame);
         });
     }
 
@@ -768,11 +764,7 @@ struct Memory::Impl {
     Tegra::MaxwellDeviceMemoryManager* gpu_device_memory{};
     Common::PageTable* current_page_table = nullptr;
 
-    struct ReadAreaCache {
-        std::array<VideoCore::RasterizerDownloadArea, 8> areas{};
-        size_t next = 0;
-    };
-    std::array<ReadAreaCache, Core::Hardware::NUM_CPU_CORES> rasterizer_read_areas{};
+    std::array<RasterizerReadAreaCache, Core::Hardware::NUM_CPU_CORES> rasterizer_read_areas{};
     std::array<GPUDirtyState, Core::Hardware::NUM_CPU_CORES> rasterizer_write_areas{};
     std::array<Common::ScratchBuffer<u32>, Core::Hardware::NUM_CPU_CORES> scratch_buffers{};
     std::span<Core::GPUDirtyMemoryManager> gpu_dirty_managers;

@@ -157,6 +157,11 @@ struct GPU::Impl {
 
     void RendererFrameEndNotify() {
         system.GetPerfStats().EndGameFrame();
+        frames_ended.fetch_add(1, std::memory_order_release);
+    }
+
+    u64 FramesEnded() const {
+        return frames_ended.load(std::memory_order_acquire);
     }
 
     /// Performs any additional setup necessary in order to begin GPU emulation.
@@ -282,6 +287,7 @@ struct GPU::Impl {
     VideoCore::ShaderNotify shader_notify;
     /// When true, we are about to shut down emulation session, so terminate outstanding tasks
     std::atomic_bool shutting_down{};
+    std::atomic<u64> frames_ended{};
 
     std::array<std::atomic<u32>, Service::Nvidia::MaxSyncPoints> syncpoints{};
 
@@ -446,6 +452,10 @@ bool GPU::UseNvdec() const {
 
 void GPU::RendererFrameEndNotify() {
     impl->RendererFrameEndNotify();
+}
+
+u64 GPU::FramesEnded() const {
+    return impl->FramesEnded();
 }
 
 void GPU::Start() {

@@ -81,3 +81,10 @@ target_compile_options(test_fastmem PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu11 -
 target_link_libraries(test_fastmem PRIVATE dynarmic Threads::Threads)
 add_test(NAME runtime_fastmem COMMAND test_fastmem)
 set_tests_properties(runtime_fastmem PROPERTIES LABELS lifter TIMEOUT 120)
+
+# Per-core cache of rasterizer read areas (core/rasterizer_read_cache.h).
+add_executable(test_read_area_cache test_read_area_cache.cpp)
+target_include_directories(test_read_area_cache PRIVATE ${PROJECT_SOURCE_DIR}/runtime)
+target_compile_features(test_read_area_cache PRIVATE cxx_std_20)
+add_test(NAME runtime_read_area_cache COMMAND test_read_area_cache)
+set_tests_properties(runtime_read_area_cache PROPERTIES LABELS lifter)

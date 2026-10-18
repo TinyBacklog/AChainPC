@@ -1167,6 +1167,7 @@ add_library(core STATIC
     loader/xci.h
     memory.cpp
     memory.h
+    rasterizer_read_cache.h
     memory/cheat_engine.cpp
     memory/cheat_engine.h
     memory/dmnt_cheat_types.h
