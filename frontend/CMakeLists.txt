@@ -20,13 +20,15 @@ endif()
 if (SUYU_CMD OR YUZU_CMD)
     # In-game overlay: Dear ImGui layout and its conversion to video_core draw data.
     add_library(acre_overlay STATIC
+        overlay/chord.cpp
+        overlay/chord.h
         overlay/frame_stats.cpp
         overlay/frame_stats.h
         overlay/overlay_ui.cpp
         overlay/overlay_ui.h
     )
     target_include_directories(acre_overlay PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/runtime)
-    target_link_libraries(acre_overlay PUBLIC common imgui)
+    target_link_libraries(acre_overlay PUBLIC common imgui SDL3::SDL3)
 
     set(SUYU_CMD_SOURCES
         emu_window/emu_window_sdl2.cpp
