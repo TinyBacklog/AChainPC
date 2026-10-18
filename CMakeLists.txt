@@ -709,7 +709,15 @@ set(ACRE_RECOMP_C_FLAGS "-march=${ACRE_RECOMP_ARCH}" "-ffp-contract=off")
 # stores into the emulator's fastmem arena, recovered from faults by
 # core/arm/recomp/recomp_fastmem.cpp. Linux x86-64 and clang only. See
 # docs/superpowers/specs/2026-10-15-fastmem-arena-design.md.
-option(ACRE_FASTMEM "Inline guest memory accesses in the lifted code (FM2)" OFF)
+set(_acre_fastmem_default OFF)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$"
+    AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set(_acre_fastmem_default ON)
+endif()
+option(ACRE_FASTMEM "Inline guest memory accesses in the lifted code (FM2)" ${_acre_fastmem_default})
+if (ACRE_FASTMEM AND NOT _acre_fastmem_default)
+    message(FATAL_ERROR "ACRE_FASTMEM needs Linux x86-64 and clang for the lifted C")
+endif()
 
 add_subdirectory(runtime)
 add_subdirectory(recompiler)

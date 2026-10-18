@@ -474,6 +474,12 @@ essa fase, contra a baseline da secção 1.5.
 
 Só se a F4 o justificar. Os helpers ficam como fallback permanente.
 
+**Resultado (2026-10-18):** justificado. Numa cena parada e determinista da
+cidade (o script TAS acaba sempre no mesmo frame), 4 runs de cada a 1080p:
+sem FM2 48.0 fps (47.0–48.7), com FM2 57.8 fps (55.5–59.2), ou seja, +20%. O
+`acre.py build` passa `-DACRE_FASTMEM=ON` em Linux x86-64 (`--no-fastmem`
+desliga-o), e o default do CMake é ON só em Linux x86-64 com clang.
+
 ## 6. Testes
 
 ### 6.1 Unidade e lifter (ctest, label `lifter`)

@@ -1,6 +1,8 @@
 """acre.py build: compile the runtime, frontend and work/export into astralchain-static."""
+import platform
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import config
@@ -22,7 +24,12 @@ def cached_compilers(build_dir: Path) -> dict[str, str]:
     return found
 
 
-def run(jobs: int | None = None, work: Path = config.WORK) -> None:
+def fastmem_supported() -> bool:
+    """FM2 (inline guest accesses, recovered from faults) is Linux x86-64 only."""
+    return sys.platform == "linux" and platform.machine() in ("x86_64", "AMD64")
+
+
+def run(jobs: int | None = None, work: Path = config.WORK, fastmem: bool = True) -> None:
     export = work / "export"
     if not (export / "recomp_registration.c").is_file():
         config.fail(config.EXIT_NO_EXPORT, f"no export in {export}; run `acre.py export` first")
@@ -38,6 +45,8 @@ def run(jobs: int | None = None, work: Path = config.WORK) -> None:
     configure = ["cmake", "-S", str(config.REPO), "-B", str(BUILD_DIR), "-G", "Ninja",
                  "-DCMAKE_BUILD_TYPE=Release", "-DVulkanHeaders_FORCE_BUNDLED=ON", "-DACRE_TESTS=OFF",
                  f"-DASTRALCHAIN_RECOMP_DIR={export}",
+                 # Always passed: a cache from before FM2 became the default holds OFF.
+                 f"-DACRE_FASTMEM={'ON' if fastmem and fastmem_supported() else 'OFF'}",
                  *(f"-D{name}={path}" for name, path in compilers.items())]
     cached = cached_compilers(BUILD_DIR)
     if cached and cached != compilers:

@@ -77,6 +77,9 @@ What each command does:
   A modded or older dump is refused.
 - If a run reports fallback sites, `tools/acre.py roots --from work/logs/validate-*.json`
   adds them to `game/roots/`, and the next `export` covers them.
+- On Linux x86-64, `build` inlines the lifted code's guest memory accesses (FM2), which
+  ran a city scene about 20% faster. `build --no-fastmem` leaves them out, and
+  `fastmem = false` in the ini, or `ACRE_NO_FASTMEM=1`, turns them off at run time.
 - Everything derived from your dump stays in `work/`, which git ignores.
 
 Exit codes:

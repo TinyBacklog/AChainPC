@@ -31,6 +31,8 @@ def main(argv=None) -> int:
 
     p = commands.add_parser("build", help="compile astralchain-static from the export")
     p.add_argument("-j", "--jobs", type=int, help="parallel compile jobs (default: ninja's)")
+    p.add_argument("--no-fastmem", action="store_true",
+                   help="build without FM2, the inline guest memory accesses (on by default on Linux x86-64)")
 
     p = commands.add_parser("run", help="play, or --validate a headless strict run")
     p.add_argument("--validate", action="store_true", help="headless, strict AOT, timed run")
@@ -63,7 +65,7 @@ def main(argv=None) -> int:
         export.run()
     elif args.command == "build":
         from acre import build
-        build.run(args.jobs)
+        build.run(args.jobs, fastmem=not args.no_fastmem)
     elif args.command == "run":
         from acre import run
         extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra

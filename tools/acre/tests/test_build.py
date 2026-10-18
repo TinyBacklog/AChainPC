@@ -24,6 +24,27 @@ class BuildCompilerTest(unittest.TestCase):
         self.assertIn("-DCMAKE_C_COMPILER=/opt/bin/clang", configure)
         self.assertIn("-DCMAKE_CXX_COMPILER=/opt/bin/c++", configure)
 
+    def configure_for(self, machine: str = "x86_64", system: str = "linux", **kwargs) -> list[str]:
+        work = fake_work()
+        with mock.patch("shutil.which", side_effect=lambda tool: f"/opt/bin/{tool}"), \
+             mock.patch("platform.machine", return_value=machine), \
+             mock.patch("sys.platform", system), \
+             mock.patch("subprocess.run") as fake:
+            fake.return_value.returncode = 0
+            build.run(work=work, **kwargs)
+        return fake.call_args_list[0].args[0]
+
+    def test_fastmem_is_on_by_default_on_linux_x86_64(self):
+        # Passed every time: an older cache may still hold OFF.
+        self.assertIn("-DACRE_FASTMEM=ON", self.configure_for())
+
+    def test_fastmem_can_be_turned_off(self):
+        self.assertIn("-DACRE_FASTMEM=OFF", self.configure_for(fastmem=False))
+
+    def test_fastmem_is_off_where_unsupported(self):
+        self.assertIn("-DACRE_FASTMEM=OFF", self.configure_for(machine="aarch64"))
+        self.assertIn("-DACRE_FASTMEM=OFF", self.configure_for(system="win32"))
+
     def test_missing_clang_stops_before_cmake(self):
         work = fake_work()
         which = lambda tool: None if tool == "clang" else f"/opt/bin/{tool}"
