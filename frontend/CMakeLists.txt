@@ -20,6 +20,8 @@ endif()
 if (SUYU_CMD OR YUZU_CMD)
     # In-game overlay: Dear ImGui layout and its conversion to video_core draw data.
     add_library(acre_overlay STATIC
+        overlay/frame_stats.cpp
+        overlay/frame_stats.h
         overlay/overlay_ui.cpp
         overlay/overlay_ui.h
     )
