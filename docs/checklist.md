@@ -23,5 +23,14 @@ roots, run `tools/acre.py export && tools/acre.py build` and repeat the affected
 | 9 | Reload | Quit, start again, load the save; progress is there | |
 | 10 | Report | `roots --from` adds 0 roots | |
 
+With `fps60 = true` in `astralchain.ini` (restart after changing it), also check:
+
+| # | Check | What "OK" means | Result |
+|---|---|---|---|
+| 11 | Cutscene timing | The same cutscene lasts the same at `fps60 = false` and `true` (within 2%; a phone stopwatch is enough) | |
+| 12 | Game speed at 60 | Combat, Legion, jumps, dash, timers and the HUD counter run at normal speed | |
+| 13 | Resolution | `resolution_scale = 2` looks at least as sharp as 1, with no bloom, depth of field or shadow artefacts | |
+| 14 | Report | `roots --from` of the 60fps session adds 0 roots | |
+
 Note anything odd under the table: graphical glitches, slow areas, crashes (with the
 time), wrong buttons.

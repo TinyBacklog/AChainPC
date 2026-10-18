@@ -19,7 +19,9 @@ your own dump of the game with update 1.0.1 applied, plus your own console keys.
 - **M3 (playable at 30 fps):** done. `astralchain.ini` holds the controls, display and audio
   settings, and saves live in `$XDG_DATA_HOME/astralchain/`. The play checklist
   (`docs/checklist.md`) passed with 0 fallbacks.
-- **M4 (60 fps and internal resolution):** in progress.
+- **M4 (60 fps and internal resolution):** done. `fps60 = true` runs the game at 60 fps
+  with cutscenes and gameplay at the right speed; `resolution_scale` raises the internal
+  resolution. The 60 fps rows of the play checklist passed.
 - **Next:** M5 (ImGui overlay).
 
 See `docs/superpowers/specs/2026-10-14-astralchainre-design.md` for the design and roadmap.
@@ -80,6 +82,13 @@ What each command does:
 - On Linux x86-64, `build` inlines the lifted code's guest memory accesses (FM2), which
   ran a city scene about 20% faster. `build --no-fastmem` leaves them out, and
   `fastmem = false` in the ini, or `ACRE_NO_FASTMEM=1`, turns them off at run time.
+- `fps60 = true` in the ini turns on the 60 fps patch (`game/patches/fps60.patches`); it
+  takes effect on the next start. Combat does not hold 60 everywhere yet.
+- `resolution_scale` sets the internal resolution as a multiple of the docked 1080p: 0.5,
+  0.75, 1, 1.5, 2 (2160p), 3 or 4. `scaling_filter` picks how the image fits the window.
+- `reactive_flushing` is off by default. Turning it on makes the game wait for the GPU
+  before reading memory the GPU wrote, which costs about 10% in combat; try it if a
+  picture or effect looks stale.
 - Everything derived from your dump stays in `work/`, which git ignores.
 
 Exit codes:
