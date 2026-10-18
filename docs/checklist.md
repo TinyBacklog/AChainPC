@@ -32,5 +32,16 @@ With `fps60 = true` in `astralchain.ini` (restart after changing it), also check
 | 13 | Resolution | `resolution_scale = 2` looks at least as sharp as 1, with no bloom, depth of field or shadow artefacts | |
 | 14 | Report | `roots --from` of the 60fps session adds 0 roots | |
 
+Overlay:
+
+| # | Check | What "OK" means | Result |
+|---|---|---|---|
+| 15 | Open and close | Insert and L3+R3 each open and close the overlay | |
+| 16 | Game input blocked | With the overlay open the character does not react to the controller or keyboard; the game keeps running | |
+| 17 | Nothing stuck | After closing, no button or key acts as if still held | |
+| 18 | Controller navigation | Every tab and setting can be reached and changed with the controller | |
+| 19 | Live settings | vsync, scaling filter, volume, fullscreen and the fps counter change at once | |
+| 20 | Save | "Save to ini" writes the changed values and keeps the file's comments | |
+
 Note anything odd under the table: graphical glitches, slow areas, crashes (with the
 time), wrong buttons.

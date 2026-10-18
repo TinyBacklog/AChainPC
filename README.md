@@ -22,7 +22,9 @@ your own dump of the game with update 1.0.1 applied, plus your own console keys.
 - **M4 (60 fps and internal resolution):** done. `fps60 = true` runs the game at 60 fps
   with cutscenes and gameplay at the right speed; `resolution_scale` raises the internal
   resolution. The 60 fps rows of the play checklist passed.
-- **Next:** M5 (ImGui overlay).
+- **M5 (in-game overlay):** done. Insert on the keyboard or L3+R3 on a controller opens an
+  overlay with live performance, the `astralchain.ini` settings, AOT counters and the log.
+- **Next:** a tuning milestone (steady 60 fps, then 1440p and 4K).
 
 See `docs/superpowers/specs/2026-10-14-astralchainre-design.md` for the design and roadmap.
 
@@ -89,6 +91,11 @@ What each command does:
 - `reactive_flushing` is off by default. Turning it on makes the game wait for the GPU
   before reading memory the GPU wrote, which costs about 10% in combat; try it if a
   picture or effect looks stale.
+- In game, **Insert** or **L3+R3** opens the overlay; the game keeps running and does not
+  see your input while it is open. Its tabs (L/R on a controller) show performance, every
+  ini setting (most apply at once, the rest say "restart required"; "Save to ini" keeps
+  the file's comments), the AOT fallbacks and the log. `[overlay]` in the ini changes the
+  key and the button chord and turns on a small fps counter.
 - Everything derived from your dump stays in `work/`, which git ignores.
 
 Exit codes:
