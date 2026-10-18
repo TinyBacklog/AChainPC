@@ -8,7 +8,9 @@
 
 #include <chrono>
 #include <algorithm>
+#include <string>
 #include <type_traits>
+#include <vector>
 #include <fmt/ranges.h>
 #include "common/swap.h"
 
@@ -139,6 +141,10 @@ void Stop();
 /// The global filter will prevent any messages from even being processed if they are filtered.
 void SetGlobalFilter(const Filter& filter);
 void SetColorConsoleBackendEnabled(bool enabled);
+
+/// Up to `max` of the newest formatted log lines at `min_level` or above,
+/// oldest first (the last 500 are kept).
+std::vector<std::string> RecentLines(std::size_t max, Level min_level);
 
 /// @brief A log entry. Log entries are store in a structured format to permit more varied output
 /// formatting on different frontends, as well as facilitating filtering and aggregation.

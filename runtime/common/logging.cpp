@@ -24,6 +24,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <fmt/ranges.h>
 
+#include "common/recent_log.h"
 #include "common/fs/file.h"
 #include "common/fs/fs.h"
 #include "common/fs/fs_paths.h"
@@ -344,6 +345,18 @@ struct LogcatBackend : public Backend {
 };
 #endif
 
+/// @brief Keeps the last lines for the game's overlay.
+struct RecentBackend final : public Backend {
+    void Write(const Entry& entry) noexcept override {
+        try {
+            recent.Add(entry.log_level, FormatLogMessage(entry));
+        } catch (...) {
+        }
+    }
+    void Flush() noexcept override {}
+    Common::RecentLog recent{500};
+};
+
 /// @brief Static state as a singleton.
 struct Impl {
     // Well, I mean it's the default constructor!
@@ -352,6 +365,7 @@ struct Impl {
     template<typename F>
     void ForEachBackend(F&& lambda) noexcept {
         lambda(static_cast<Backend&>(color_console_backend));
+        lambda(static_cast<Backend&>(recent_backend));
 #ifndef __OPENORBIS__
         if (file_backend)
             lambda(static_cast<Backend&>(*file_backend));
@@ -366,6 +380,7 @@ struct Impl {
 
     Filter filter;
     ColorConsoleBackend color_console_backend{};
+    RecentBackend recent_backend{};
 #ifndef __OPENORBIS__
     std::optional<FileBackend> file_backend;
 #endif
@@ -409,6 +424,11 @@ void Stop() {
 void SetGlobalFilter(const Filter& filter) {
     if (logging_instance)
         logging_instance->filter = filter;
+}
+
+std::vector<std::string> RecentLines(std::size_t max, Level min_level) {
+    if (!logging_instance) return {};
+    return logging_instance->recent_backend.recent.Lines(max, min_level);
 }
 
 void SetColorConsoleBackendEnabled(bool enabled) {

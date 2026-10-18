@@ -79,6 +79,7 @@ add_library(
     literals.h
     logging.cpp
     logging.h
+    recent_log.h
     lz4_compression.cpp
     lz4_compression.h
     make_unique_for_overwrite.h

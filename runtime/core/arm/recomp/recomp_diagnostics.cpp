@@ -136,6 +136,12 @@ void ConfigureRecompDiagnostics(bool strict, bool stats) {
     failure.clear();
     sites.clear();
     dropped_sites = 0;
+    for (auto& c : counters) {
+        c.aot_ns = 0;
+        c.jit_ns = 0;
+        c.blocks = 0;
+        c.entries = 0;
+    }
     loaded_modules = nlohmann::json::array();
     module_ranges.clear();
     for (auto& c : counters) {
@@ -168,7 +174,7 @@ void RecordRecompExecution(std::size_t core, bool jit, u64 ns, u64 blocks) {
 }
 void RecordRecompFallback(std::size_t core, u64 pc, std::string_view reason,
                           std::string_view module, u64 offset, u32 opcode) {
-    if (!RecompStatisticsEnabled()) return;
+    // Always on: the overlay lists these live, and the path is already the slow one.
     if (core < counters.size()) counters[core].entries.fetch_add(1, std::memory_order_relaxed);
     std::scoped_lock lock{diagnostic_mutex};
     Site site{core, pc, std::string{reason}, std::string{module}, offset, opcode};
@@ -176,6 +182,26 @@ void RecordRecompFallback(std::size_t core, u64 pc, std::string_view reason,
     if (it != sites.end()) ++it->second;
     else if (sites.size() < 4096) sites.emplace(std::move(site), 1);
     else ++dropped_sites;
+}
+RecompSnapshot RecompDiagnosticsSnapshot() {
+    RecompSnapshot snapshot;
+    snapshot.statistics = RecompStatisticsEnabled();
+    for (std::size_t i = 0; i < counters.size(); ++i) {
+        snapshot.blocks[i] = counters[i].blocks.load(std::memory_order_relaxed);
+    }
+    std::scoped_lock lock{diagnostic_mutex};
+    // The report keys sites by core and PC; the overlay wants one row per place.
+    std::map<std::tuple<std::string, u64, std::string>, u64> merged;
+    for (const auto& [site, count] : sites) {
+        const auto& [core, pc, reason, module, offset, opcode] = site;
+        merged[{module, offset, reason}] += count;
+    }
+    for (const auto& [key, count] : merged) {
+        const auto& [module, offset, reason] = key;
+        snapshot.sites.push_back({module, reason, offset, count});
+    }
+    snapshot.dropped_sites = dropped_sites;
+    return snapshot;
 }
 void WriteRecompReport(const std::string& path, std::string_view termination,
                        std::string_view game, std::string_view user_dir, u64 program_id) {

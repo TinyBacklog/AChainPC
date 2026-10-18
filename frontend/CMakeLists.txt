@@ -26,6 +26,8 @@ if (SUYU_CMD OR YUZU_CMD)
         overlay/frame_stats.h
         overlay/overlay_ui.cpp
         overlay/overlay_ui.h
+        overlay/thread_cpu.cpp
+        overlay/thread_cpu.h
         ini_rewrite.cpp
         ini_rewrite.h
     )

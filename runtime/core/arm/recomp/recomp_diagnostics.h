@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <array>
 #include <chrono>
+#include <vector>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -19,6 +21,21 @@ void RecompGuestPanic();
 void RecordRecompFallback(std::size_t core, u64 pc, std::string_view reason,
                           std::string_view module, u64 offset, u32 opcode);
 void RecordRecompExecution(std::size_t core, bool jit, u64 nanoseconds, u64 blocks);
+/// A copy of the live counters, for the overlay. Fallback sites are always
+/// recorded; blocks only with statistics on (--recomp-stats).
+struct RecompSnapshot {
+    struct Site {
+        std::string module;
+        std::string reason;
+        u64 offset;
+        u64 count;
+    };
+    bool statistics = false;
+    std::array<u64, 4> blocks{};
+    std::vector<Site> sites;
+    u64 dropped_sites = 0;
+};
+RecompSnapshot RecompDiagnosticsSnapshot();
 // Throws on IO errors, allowing the CLI to report failure instead of losing a report silently.
 void WriteRecompReport(const std::string& path, std::string_view termination,
                        std::string_view game, std::string_view user_dir, u64 program_id);

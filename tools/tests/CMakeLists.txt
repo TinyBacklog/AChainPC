@@ -115,3 +115,17 @@ target_include_directories(test_ini_rewrite PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_features(test_ini_rewrite PRIVATE cxx_std_20)
 add_test(NAME frontend_ini_rewrite COMMAND test_ini_rewrite)
 set_tests_properties(frontend_ini_rewrite PROPERTIES LABELS frontend)
+
+add_executable(test_thread_cpu test_thread_cpu.cpp)
+target_link_libraries(test_thread_cpu PRIVATE acre_overlay Threads::Threads)
+target_compile_features(test_thread_cpu PRIVATE cxx_std_20)
+add_test(NAME frontend_thread_cpu COMMAND test_thread_cpu)
+set_tests_properties(frontend_thread_cpu PROPERTIES LABELS frontend)
+
+# Live recomp diagnostics and recent log lines for the overlay.
+add_executable(test_recomp_snapshot test_recomp_snapshot.cpp)
+target_link_libraries(test_recomp_snapshot PRIVATE core frontend_common)
+target_include_directories(test_recomp_snapshot PRIVATE ${PROJECT_SOURCE_DIR}/runtime)
+target_compile_features(test_recomp_snapshot PRIVATE cxx_std_20)
+add_test(NAME runtime_recomp_snapshot COMMAND test_recomp_snapshot)
+set_tests_properties(runtime_recomp_snapshot PROPERTIES LABELS lifter)

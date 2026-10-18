@@ -1028,7 +1028,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
                               impl->ctx.pc, miss_module.empty() ? "?" : miss_module, miss_offset);
                 }
             }
-            if (RecompStatisticsEnabled()) {
+            {
                 // Only attribute addresses in a known executable mapping.
                 u64 offset{};
                 const auto module = RecompModuleAt(impl->ctx.pc, offset);
@@ -1081,7 +1081,7 @@ HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
                 LOG_WARNING(Core_ARM, "recomp: unimplemented opcode at {:#x}; running on JIT",
                             impl->ctx.pc);
             }
-            if (RecompStatisticsEnabled()) {
+            {
                 // Only attribute addresses in a known executable mapping.
                 u64 offset{};
                 const auto module = RecompModuleAt(impl->ctx.pc, offset);
