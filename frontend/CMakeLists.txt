@@ -65,7 +65,7 @@ if (SUYU_CMD OR YUZU_CMD)
         set(RECOMP_STATIC_ONLY ON)
         set(_recomp_libs "")
         # Must match Core::RecompAbiVersion; the generated header asserts it.
-        set(_recomp_abi 6)
+        set(_recomp_abi 7)
         set(_recomp_identities "#pragma once\n#include \"core/arm/recomp/recomp_identity.h\"\ninline constexpr Core::RecompModuleIdentity kRecompIdentities[] = {\n")
         # file(GLOB) treats [ ] * ? in the WHOLE path as glob syntax, not just
         # the trailing "/*" - a title whose exported folder name carries its

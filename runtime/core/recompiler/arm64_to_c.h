@@ -4595,6 +4595,11 @@ typedef struct GuestContext {
        mapped guest page appears with its access rights; NULL when FM2 is off.
        Read by the inline accesses of recomp_fastmem_access.h. */
     uint8_t* fm_arena;
+    /* Exclusive reservation of this core (see recomp_exclusive): the address,
+       its width and the value the exclusive load saw. excl_kind 0 = none,
+       1 = held here, 2 = held by the emulator's monitor. The emulator clears
+       it on every entry, as it clears its monitor. */
+    uint64_t excl_addr; uint64_t excl_value; uint32_t excl_kind; uint32_t excl_size;
     /* Save-data filesystem state */
     char save_dir[512];
     /* Heap break for SVC memory allocation */
@@ -4629,6 +4634,7 @@ typedef char recomp_layout_fmtable[offsetof(GuestContext, fm_table) == 856 ? 1 :
 typedef char recomp_layout_fmlimit[offsetof(GuestContext, fm_limit) == 864 ? 1 : -1];
 typedef char recomp_layout_bcache[offsetof(GuestContext, block_cache) == 872 && sizeof(RecompBlockCacheEntry) == 16 ? 1 : -1];
 typedef char recomp_layout_fmarena[offsetof(GuestContext, fm_arena) == 131944 ? 1 : -1];
+typedef char recomp_layout_excl[offsetof(GuestContext, excl_addr) == 131952 && offsetof(GuestContext, excl_size) == 131972 ? 1 : -1];
 
 /* Where this module is actually loaded in the guest's address space.
    Every address the static pass bakes in - ADR/ADRP results, branch targets,
@@ -5568,11 +5574,76 @@ void recomp_barrier(void){
 #endif
 }
 
+/* acre: exclusive begin */
+/* Exclusive loads and stores on plain memory, without the emulator's monitor.
+   The monitor takes a global spin lock and goes through Core::Memory for every
+   one of them; in game that cost about 4.5% of the CPU time. A reservation
+   here is the address, the width and the value the load saw, and the store is
+   a compare-and-swap against that value. The monitor's store compares values
+   too, so the two agree on any word both touch. Returns 0 to leave the
+   instruction to the emulator: pages the fast path cannot see, unaligned
+   addresses (the monitor raises what the hardware would), 128-bit pairs, a
+   store after a load the monitor served, system registers. */
+static int recomp_exclusive_fast(GuestContext* c, uint32_t insn){
+  if(!c->fm_limit) return 0;
+  if((insn & 0xfffff0ffU) == 0xd503305fU){ /* CLREX */
+    const int monitor = c->excl_kind == 2;
+    c->excl_kind = 0;
+    return !monitor;
+  }
+  if((insn & 0x3f800000U) != 0x08000000U) return 0;
+  const uint32_t size = insn >> 30, load = (insn >> 22) & 1, pair = (insn >> 21) & 1;
+  const uint32_t rs = (insn >> 16) & 31, rt2 = (insn >> 10) & 31, rn = (insn >> 5) & 31, rt = insn & 31;
+  if(pair ? size != 2 : rt2 != 31) return 0;
+  if(load && rs != 31) return 0;
+  const uint32_t n = pair ? 8 : 1u << size;
+  const uint64_t a = c->x[rn];   /* x[31] is SP here */
+  uint8_t* p = (a & (n - 1)) ? 0 : _recomp_fm(c, a, n);
+  if(load){
+    if(!p){ c->excl_kind = 2; return 0; }
+    uint64_t v;
+    switch(n){
+    case 1: v = __atomic_load_n((uint8_t*)p, __ATOMIC_ACQUIRE); break;
+    case 2: v = __atomic_load_n((uint16_t*)p, __ATOMIC_ACQUIRE); break;
+    case 4: v = __atomic_load_n((uint32_t*)p, __ATOMIC_ACQUIRE); break;
+    default: v = __atomic_load_n((uint64_t*)p, __ATOMIC_ACQUIRE); break;
+    }
+    c->excl_addr = a; c->excl_value = v; c->excl_size = n; c->excl_kind = 1;
+    if(pair){
+      if(rt != 31) c->x[rt] = (uint32_t)v;
+      if(rt2 != 31) c->x[rt2] = v >> 32;
+    } else if(rt != 31) c->x[rt] = v;
+    return 1;
+  }
+  if(c->excl_kind == 2){ c->excl_kind = 0; return 0; }
+  const int held = c->excl_kind == 1 && c->excl_addr == a && c->excl_size == n && p;
+  c->excl_kind = 0;
+  int ok = 0;
+  if(held){
+    const uint64_t lo = rt == 31 ? 0 : c->x[rt], hi = rt2 == 31 ? 0 : c->x[rt2];
+    const uint64_t w = pair ? (uint32_t)lo | (hi << 32) : lo;
+    switch(n){
+    case 1: { uint8_t e = (uint8_t)c->excl_value;
+      ok = __atomic_compare_exchange_n((uint8_t*)p, &e, (uint8_t)w, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); break; }
+    case 2: { uint16_t e = (uint16_t)c->excl_value;
+      ok = __atomic_compare_exchange_n((uint16_t*)p, &e, (uint16_t)w, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); break; }
+    case 4: { uint32_t e = (uint32_t)c->excl_value;
+      ok = __atomic_compare_exchange_n((uint32_t*)p, &e, (uint32_t)w, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); break; }
+    default: { uint64_t e = c->excl_value;
+      ok = __atomic_compare_exchange_n((uint64_t*)p, &e, w, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); break; }
+    }
+  }
+  if(rs != 31) c->x[rs] = ok ? 0 : 1;
+  return 1;
+}
+
 void recomp_exclusive(GuestContext* c,uint32_t insn,uint64_t pc){
+  if(recomp_exclusive_fast(c,insn)) return;
   if(c->host_mem && c->host_mem->exclusive && c->host_mem->exclusive(c->host_mem->user,insn)) return;
   c->pc=pc;
   c->halted=RECOMP_HALT_UNHANDLED;
 }
+/* acre: exclusive end */
 
 void recomp_unhandled(GuestContext* c,uint32_t insn,uint64_t pc){
 #ifdef SUYU_HOSTED_RECOMP

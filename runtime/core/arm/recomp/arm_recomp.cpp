@@ -206,6 +206,13 @@ struct GuestContextView {
     // Fastmem arena of the inline accesses (FM2); null turns them off. See
     // core/arm/recomp/recomp_fastmem_access.h.
     u8* fm_arena;
+    // Exclusive reservation the recompiled code holds itself (see
+    // recomp_exclusive in core/recompiler/arm64_to_c.h). Cleared together with
+    // the monitor on every entry.
+    u64 excl_addr;
+    u64 excl_value;
+    u32 excl_kind;
+    u32 excl_size;
 };
 
 // Matches RecompHostMem in the generated runtime. The recompiled code calls
@@ -242,6 +249,8 @@ static_assert(offsetof(GuestContextView, fm_limit) == 864);
 static_assert(offsetof(GuestContextView, block_cache) == 872);
 static_assert(sizeof(GuestContextView::BlockCacheEntry) == 16);
 static_assert(offsetof(GuestContextView, fm_arena) == 131944);
+static_assert(offsetof(GuestContextView, excl_addr) == 131952);
+static_assert(offsetof(GuestContextView, excl_size) == 131972);
 
 // A block that ends in a known successor calls it directly instead of coming
 // back here, so this bounds how long the recompiled code may run before the
@@ -773,6 +782,9 @@ HaltReason ArmRecomp::RunFallback(Kernel::KThread* thread) {
     // working unchanged no matter which engine actually ran.
     impl->ctx.pending_svc = kNoPendingSvc;
     impl->ctx.halted = 0;
+    // The JIT keeps its reservations in the monitor; one held here would
+    // outlive a store the JIT made in between.
+    impl->ctx.excl_kind = 0;
     impl->interrupted.store(false, std::memory_order_relaxed);
 
     Kernel::Svc::ThreadContext tctx{};
@@ -798,6 +810,7 @@ HaltReason ArmRecomp::RunFallback(Kernel::KThread* thread) {
 
 HaltReason ArmRecomp::RunThread(Kernel::KThread* thread) {
     if (impl->exclusive_monitor) impl->exclusive_monitor->ClearExclusive(impl->core_index);
+    impl->ctx.excl_kind = 0;
 #ifdef ACRE_MEMSTATS
     RecompMemStats::MaybeReport();
 #endif
