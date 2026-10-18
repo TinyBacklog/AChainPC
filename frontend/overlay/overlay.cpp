@@ -7,9 +7,10 @@ AcreOverlay::AcreOverlay(OverlayConfig config_, std::unique_ptr<GameInput> game_
                          OverlaySources sources_)
     : config{std::move(config_)}, game_input{std::move(game_input_)}, chord{config.pad_chord},
       sources{std::move(sources_)}, settings{config.settings}, fps_counter{config.fps_counter} {
-    if (config.start_open) {
-        Open();
-    }
+    // --overlay-open: the panel is drawn from the start, but the overlay takes
+    // no input and blocks nothing, so a TAS script can still drive the game
+    // while the bench measures what drawing it costs.
+    shown_open = config.start_open;
 }
 
 AcreOverlay::~AcreOverlay() = default;

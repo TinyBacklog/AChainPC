@@ -117,13 +117,15 @@ int main() {
         CHECK(!overlay.IsOpen());
     }
     {
-        // --overlay-open starts open, and blocks from the start.
+        // --overlay-open only shows the panel, for measuring its cost with a
+        // TAS script driving the game: it takes no input and blocks nothing.
         Log log;
         OverlayConfig config = Config();
         config.start_open = true;
         AcreOverlay overlay(config, std::make_unique<FakeGameInput>(log));
-        CHECK(overlay.IsOpen());
-        CHECK(log.calls == std::vector<std::string>({"block"}));
+        CHECK(!overlay.IsOpen());
+        CHECK(log.calls.empty());
+        CHECK(!overlay.OnSdlEvent(Key(SDL_SCANCODE_W, true)));
         overlay.Build(1280, 720);                                   // builds without input
     }
     if (failures) { std::printf("%d failures\n", failures); return 1; }

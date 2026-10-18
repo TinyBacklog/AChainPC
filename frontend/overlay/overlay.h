@@ -43,7 +43,7 @@ struct OverlayConfig {
     int key_scancode = 0;            // SDL_Scancode that toggles the overlay
     std::vector<int> pad_chord;      // SDL_GamepadButton values
     bool fps_counter = false;
-    bool start_open = false;         // --overlay-open, for measuring
+    bool start_open = false;         // --overlay-open: drawn only, for measuring
     AcreIni settings;                // as loaded at start-up
     std::filesystem::path save_path; // where "Save to ini" writes
     std::string ini_template;        // used when that file does not exist yet
