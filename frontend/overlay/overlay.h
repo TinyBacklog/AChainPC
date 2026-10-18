@@ -5,11 +5,15 @@
 // (GPU thread).
 #pragma once
 
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <vector>
 #include <SDL3/SDL_events.h>
+#include "frontend/acre_ini.h"
+#include "frontend/live_settings.h"
 #include "frontend/overlay/chord.h"
 #include "frontend/overlay/frame_stats.h"
 #include "frontend/overlay/overlay_ui.h"
@@ -28,16 +32,27 @@ public:
     virtual void BlockControllers(bool blocked) = 0;
 };
 
+/// Where the overlay's live data and settings go, filled in by the window.
+struct OverlaySources {
+    std::function<OverlayAotView()> aot;
+    std::function<std::vector<std::string>(int min_level)> log_lines;
+    LiveTargets live;                       // called on the main thread
+};
+
 struct OverlayConfig {
     int key_scancode = 0;            // SDL_Scancode that toggles the overlay
     std::vector<int> pad_chord;      // SDL_GamepadButton values
     bool fps_counter = false;
     bool start_open = false;         // --overlay-open, for measuring
+    AcreIni settings;                // as loaded at start-up
+    std::filesystem::path save_path; // where "Save to ini" writes
+    std::string ini_template;        // used when that file does not exist yet
 };
 
 class AcreOverlay final : public VideoCore::FrameOverlay {
 public:
-    AcreOverlay(OverlayConfig config, std::unique_ptr<GameInput> game_input);
+    AcreOverlay(OverlayConfig config, std::unique_ptr<GameInput> game_input,
+                OverlaySources sources = {});
     ~AcreOverlay() override;
 
     /// Main thread. True when the event must not reach the game.
@@ -45,6 +60,8 @@ public:
     bool IsOpen() const;
     /// GPU thread, once per presented frame.
     void OnFrameDisplayed();
+    /// Main thread: applies settings changed in the overlay and saves the ini.
+    void RunMainActions();
 
     const VideoCore::OverlayFontAtlas& Font() override;
     VideoCore::OverlayDrawData Build(float width, float height) override;
@@ -70,7 +87,22 @@ private:
     bool shown_open = false;
     std::vector<OverlayInput> pending_input;
 
+    std::vector<IniChange> main_changes;    // to apply on the main thread
+    bool main_save = false;
+    std::string save_message;
+
+    // Main thread.
+    std::vector<IniChange> unsaved;
+    OverlaySources sources;
+
     // GPU thread.
     OverlayUi ui;
     FrameStats frame_stats;
+    ThreadCpu thread_cpu;
+    AcreIni settings;
+    bool fps_counter = false;
+    u64 last_refresh_ns = 0;
+    std::vector<ThreadLoad> threads;
+    OverlayAotView aot;
+    std::vector<std::string> log_lines;
 };

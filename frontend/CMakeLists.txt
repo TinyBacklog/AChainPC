@@ -31,6 +31,8 @@ if (SUYU_CMD OR YUZU_CMD)
         overlay/thread_cpu.cpp
         overlay/thread_cpu.h
         ini_rewrite.cpp
+        live_settings.cpp
+        live_settings.h
         ini_rewrite.h
     )
     target_include_directories(acre_overlay PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/runtime)

@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "core/frontend/emu_window.h"
@@ -48,6 +50,8 @@ public:
     /// Wait for the next event on the main thread.
     /// The in-game overlay, which sees every event before the game does.
     void SetOverlay(std::shared_ptr<AcreOverlay> overlay_);
+    /// Main thread.
+    void SetFullscreen(bool on);
 
     void WaitEvent();
 
@@ -122,6 +126,8 @@ protected:
 class DummyContext : public Core::Frontend::GraphicsContext {};
 
 /// The overlay for this window and session, configured from astralchain.ini.
-std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini, bool start_open,
+std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini,
+                                             const std::optional<std::filesystem::path>& ini_found,
+                                             bool start_open,
                                              EmuWindow_SDL2& window, Core::System& system,
                                              InputCommon::InputSubsystem& input_subsystem);

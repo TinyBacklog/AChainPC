@@ -9,6 +9,7 @@
 #include "common/settings_input.h"
 #include "core/arm/recomp/recomp_fastmem.h"
 #include "frontend/acre_ini_apply.h"
+#include "frontend/live_settings.h"
 #include "frontend/sdl_config.h"
 #include "input_common/main.h"
 
@@ -28,15 +29,6 @@ Settings::ResolutionSetup ResolutionFor(std::string_view scale) {
     if (scale == "3") return Settings::ResolutionSetup::Res3X;
     if (scale == "4") return Settings::ResolutionSetup::Res4X;
     return Settings::ResolutionSetup::Res1X;
-}
-
-Settings::ScalingFilter FilterFor(std::string_view name) {
-    if (name == "nearest") return Settings::ScalingFilter::NearestNeighbor;
-    if (name == "bilinear") return Settings::ScalingFilter::Bilinear;
-    if (name == "bicubic") return Settings::ScalingFilter::Bicubic;
-    if (name == "gaussian") return Settings::ScalingFilter::Gaussian;
-    if (name == "scaleforce") return Settings::ScalingFilter::ScaleForce;
-    return Settings::ScalingFilter::Fsr;
 }
 
 template <std::size_t N>
@@ -106,8 +98,17 @@ void ApplyAcreIni(const AcreIni& ini) {
     acre_fm_configure(ini.fastmem ? 1 : 0, static_cast<unsigned>(ini.fastmem_demote_after));
     Settings::values.use_reactive_flushing.SetValue(ini.reactive_flushing);
     Settings::values.resolution_setup.SetValue(ResolutionFor(ini.resolution_scale));
-    Settings::values.scaling_filter.SetValue(FilterFor(ini.scaling_filter));
+    Settings::values.scaling_filter.SetValue(ScalingFilterFor(ini.scaling_filter));
 
+    ApplyAcreControls(ini);
+    LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
+             "fps60={}, fastmem={}, fastmem_demote_after={}, reactive_flushing={}, resolution_scale={}, scaling_filter={}",
+             ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60, ini.fastmem,
+             ini.fastmem_demote_after, ini.reactive_flushing,
+             ini.resolution_scale, ini.scaling_filter);
+}
+
+void ApplyAcreControls(const AcreIni& ini) {
     auto& player = Settings::values.players.GetValue()[0];
     player.connected = true;
     const ControlPlan plan = PlanControls(ini);
@@ -117,11 +118,6 @@ void ApplyAcreIni(const AcreIni& ini) {
     for (const auto& [name, param] : plan.bindings) {
         Bind(player, name, param);
     }
-    LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
-             "fps60={}, fastmem={}, fastmem_demote_after={}, reactive_flushing={}, resolution_scale={}, scaling_filter={}",
-             ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60, ini.fastmem,
-             ini.fastmem_demote_after, ini.reactive_flushing,
-             ini.resolution_scale, ini.scaling_filter);
 }
 
 int AcreDisplayIndex() {

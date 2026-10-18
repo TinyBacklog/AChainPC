@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <chrono>
+#include <utility>
 #include "frontend/overlay/overlay.h"
 
-AcreOverlay::AcreOverlay(OverlayConfig config_, std::unique_ptr<GameInput> game_input_)
-    : config{std::move(config_)}, game_input{std::move(game_input_)}, chord{config.pad_chord} {
+AcreOverlay::AcreOverlay(OverlayConfig config_, std::unique_ptr<GameInput> game_input_,
+                         OverlaySources sources_)
+    : config{std::move(config_)}, game_input{std::move(game_input_)}, chord{config.pad_chord},
+      sources{std::move(sources_)}, settings{config.settings}, fps_counter{config.fps_counter} {
     if (config.start_open) {
         Open();
     }
@@ -137,22 +140,82 @@ const VideoCore::OverlayFontAtlas& AcreOverlay::Font() {
     return ui.Font();
 }
 
+void AcreOverlay::RunMainActions() {
+    std::vector<IniChange> changes;
+    bool save = false;
+    {
+        std::scoped_lock lock{mutex};
+        changes.swap(main_changes);
+        save = std::exchange(main_save, false);
+    }
+    for (const auto& change : changes) {
+        ApplyLiveSetting(change, sources.live);
+        unsaved.push_back(change);
+    }
+    if (!save) return;
+    std::string error;
+    std::string message;
+    if (unsaved.empty()) {
+        message = "Nothing to save";
+    } else if (SaveIniChanges(config.save_path, unsaved, config.ini_template, error)) {
+        message = "Saved to " + config.save_path.filename().string();
+        unsaved.clear();
+    } else {
+        message = "Save failed: " + error;
+    }
+    std::scoped_lock lock{mutex};
+    save_message = std::move(message);
+}
+
 VideoCore::OverlayDrawData AcreOverlay::Build(float width, float height) {
     OverlayModel model;
     std::vector<OverlayInput> inputs;
     {
         std::scoped_lock lock{mutex};
         model.open = shown_open;
+        model.save_message = save_message;
         inputs.swap(pending_input);
     }
-    model.fps_counter = config.fps_counter;
+    model.fps_counter = fps_counter;
     if (!model.open && !model.fps_counter) {
         return {};
     }
-    model.fps = static_cast<float>(frame_stats.Summarize(1'000'000'000).fps);
+    const u64 now = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         .count());
+    model.stats = frame_stats.Summarize(1'000'000'000);
+    model.fps = static_cast<float>(model.stats.fps);
+    if (model.open) {
+        // The slower sources refresh twice a second.
+        if (now - last_refresh_ns >= 500'000'000) {
+            last_refresh_ns = now;
+            threads = thread_cpu.Sample();
+            if (sources.aot) aot = sources.aot();
+            if (sources.log_lines) log_lines = sources.log_lines(ui.LogLevel());
+        }
+        model.stats = frame_stats.Summarize(5'000'000'000);
+        model.frame_times = frame_stats.Recent(10'000'000'000);
+        model.threads = threads;
+        model.aot = aot;
+        model.log_lines = log_lines;
+        model.settings = &settings;
+    }
     ui.SetDisplaySize(width, height);
     for (const auto& input : inputs) {
         ui.QueueInput(input);
     }
-    return ui.BuildFrame(model);
+    OverlayActions actions;
+    auto data = ui.BuildFrame(model, &actions);
+    if (!actions.changes.empty() || actions.save) {
+        for (const auto& change : actions.changes) {
+            UpdateAcreIni(settings, change);
+            if (change.section == "overlay" && change.key == "fps_counter") {
+                fps_counter = settings.fps_counter;
+            }
+        }
+        std::scoped_lock lock{mutex};
+        main_changes.insert(main_changes.end(), actions.changes.begin(), actions.changes.end());
+        main_save = main_save || actions.save;
+    }
+    return data;
 }

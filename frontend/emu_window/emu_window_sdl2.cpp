@@ -22,6 +22,11 @@ static constexpr Uint8 SDL_RELEASED = 0;
 #include "frontend/acre_ini_apply.h"
 #include "frontend/acre_tas.h"
 #include "frontend/emu_window/emu_window_sdl2.h"
+#include "acre_ini_template.h"
+#include "common/logging.h"
+#include "core/arm/recomp/recomp_diagnostics.h"
+#include "core/arm/recomp/recomp_fastmem.h"
+#include "frontend/ini_rewrite.h"
 #include "frontend/overlay/overlay.h"
 #include "suyu_cmd/suyu_icon.h"
 
@@ -589,6 +594,14 @@ void EmuWindow_SDL2::SetOverlay(std::shared_ptr<AcreOverlay> overlay_) {
     overlay = std::move(overlay_);
 }
 
+void EmuWindow_SDL2::SetFullscreen(bool on) {
+    if (on) {
+        Fullscreen();
+    } else {
+        SDL_SetWindowFullscreen(render_window, false);
+    }
+}
+
 bool EmuWindow_SDL2::IsShown() const {
     return is_shown;
 }
@@ -683,6 +696,9 @@ void EmuWindow_SDL2::WaitEvent() {
     if (!SDL_WaitEventTimeout(&event, 100)) {
         // No event is the normal case for a window nobody touches (a benchmark
         // replaying a script), so the periodic report cannot wait for one.
+        if (overlay) {
+            overlay->RunMainActions();
+        }
         ReportPerformance();
         return;
     }
@@ -690,6 +706,9 @@ void EmuWindow_SDL2::WaitEvent() {
     // With the overlay open, take everything queued so its navigation keeps up.
     while (overlay && overlay->IsOpen() && SDL_PollEvent(&event)) {
         HandleEvent(event);
+    }
+    if (overlay) {
+        overlay->RunMainActions();
     }
     ReportPerformance();
 }
@@ -906,11 +925,15 @@ private:
 };
 } // namespace
 
-std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini, bool start_open,
-                                             EmuWindow_SDL2& window, Core::System& system,
+std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini,
+                                             const std::optional<std::filesystem::path>& ini_found,
+                                             bool start_open, EmuWindow_SDL2& window,
+                                             Core::System& system,
                                              InputCommon::InputSubsystem& input_subsystem) {
-    (void)window;
     OverlayConfig config;
+    config.settings = ini;
+    config.save_path = AcreIniSavePath(ini_found);
+    config.ini_template = kAcreIniTemplate;
     config.key_scancode = SDL_GetScancodeFromName(ini.overlay_key.c_str());
     if (config.key_scancode == SDL_SCANCODE_UNKNOWN) {
         LOG_WARNING(Frontend, "astralchain.ini: [overlay] key: unknown key '{}'; using Insert",
@@ -922,6 +945,32 @@ std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini, bool start_open
     }
     config.fps_counter = ini.fps_counter;
     config.start_open = start_open;
+    OverlaySources sources;
+    sources.aot = [] {
+        const Core::RecompSnapshot snapshot = Core::RecompDiagnosticsSnapshot();
+        OverlayAotView view;
+        view.statistics = snapshot.statistics;
+        view.blocks = snapshot.blocks;
+        for (const auto& site : snapshot.sites) {
+            view.sites.push_back({site.module, site.reason, site.offset, site.count});
+        }
+        view.dropped_sites = snapshot.dropped_sites;
+        view.fm_faults = acre_fm_faults();
+        view.fm_demotions = acre_fm_demotions();
+        return view;
+    };
+    sources.log_lines = [](int min_level) {
+        return Common::Log::RecentLines(200, static_cast<Common::Log::Level>(min_level));
+    };
+    sources.live.fullscreen = [&window](bool on) { window.SetFullscreen(on); };
+    sources.live.fastmem_demote_after = [](int n) { acre_fm_set_demote_after(static_cast<unsigned>(n)); };
+    sources.live.controls_preset = [&system, ini](const std::string& preset) {
+        AcreIni controls = ini;
+        controls.preset = preset;
+        ApplyAcreControls(controls);
+        system.HIDCore().ReloadInputDevices();
+    };
     return std::make_shared<AcreOverlay>(std::move(config),
-                                         std::make_unique<SdlGameInput>(system, input_subsystem));
+                                         std::make_unique<SdlGameInput>(system, input_subsystem),
+                                         std::move(sources));
 }

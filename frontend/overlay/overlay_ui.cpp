@@ -2,9 +2,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_scancode.h>
+#include "frontend/acre_ini.h"
+#include "frontend/live_settings.h"
 #include "frontend/overlay/overlay_ui.h"
 
 namespace {
@@ -22,20 +25,6 @@ void BuildFpsCounter(const OverlayModel& model) {
     list->AddRectFilled(ImVec2(corner.x - 4, corner.y - 2),
                         ImVec2(corner.x + size.x + 4, corner.y + size.y + 2), IM_COL32(0, 0, 0, 96), 3);
     list->AddText(corner, IM_COL32(255, 255, 255, 230), text);
-}
-
-void BuildPanel(const OverlayModel& model) {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(16, 16), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(std::min(560.0f, viewport->Size.x - 32), viewport->Size.y - 32),
-                             ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                                       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-    if (ImGui::Begin("AstralChainRe", nullptr, flags)) {
-        ImGui::Text("%.1f fps", model.fps);
-    }
-    ImGui::End();
 }
 
 void Convert(const ImDrawData& in, VideoCore::OverlayDrawData& out) {
@@ -187,7 +176,163 @@ void OverlayUi::SetDisplaySize(float width_, float height_) {
     height = height_;
 }
 
-VideoCore::OverlayDrawData OverlayUi::BuildFrame(const OverlayModel& model) {
+namespace {
+constexpr std::array<const char*, 4> kTabNames{"Performance", "Settings", "AOT", "Log"};
+
+const char* EffectNote(std::string_view section, std::string_view key) {
+    switch (EffectOf(section, key)) {
+    case SettingEffect::Live: return nullptr;
+    case SettingEffect::Partial: return "full effect after restart";
+    case SettingEffect::Restart: return "restart required";
+    }
+    return nullptr;
+}
+
+void Note(std::string_view section, std::string_view key) {
+    if (const char* note = EffectNote(section, key)) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s)", note);
+    }
+}
+
+void Change(OverlayActions* actions, const char* section, const char* key, std::string value) {
+    if (actions) actions->changes.push_back({section, key, std::move(value)});
+}
+
+void Checkbox(OverlayActions* actions, const char* section, const char* key, const char* label, bool value) {
+    if (ImGui::Checkbox(label, &value)) Change(actions, section, key, value ? "true" : "false");
+    Note(section, key);
+}
+
+template <size_t N>
+void Combo(OverlayActions* actions, const char* section, const char* key, const char* label,
+           const std::array<const char*, N>& options, const std::string& value) {
+    if (ImGui::BeginCombo(label, value.c_str())) {
+        for (const char* option : options) {
+            const bool selected = value == option;
+            if (ImGui::Selectable(option, selected) && !selected) Change(actions, section, key, option);
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    Note(section, key);
+}
+
+void IntSlider(OverlayActions* actions, const char* section, const char* key, const char* label, int value,
+               int min, int max) {
+    if (ImGui::SliderInt(label, &value, min, max)) Change(actions, section, key, std::to_string(value));
+    Note(section, key);
+}
+
+void PerformanceTab(const OverlayModel& model) {
+    ImGui::Text("%.1f fps   frame %.1f ms   1%% low %.0f", model.stats.fps, model.stats.frame_ms,
+                model.stats.low_1pct);
+    ImGui::Text("frames over 33 ms: %.0f%%", model.stats.slow_share * 100);
+    if (!model.frame_times.empty()) {
+        ImGui::PlotLines("##frametimes", model.frame_times.data(), static_cast<int>(model.frame_times.size()),
+                         0, "frame time, last 10 s (0-50 ms)", 0.0f, 50.0f,
+                         ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeight() * 6));
+    }
+    ImGui::SeparatorText("Threads (% of one core)");
+    if (model.threads.empty()) ImGui::TextDisabled("n/a");
+    for (const auto& thread : model.threads) {
+        ImGui::Text("%-14s %5.0f%%", thread.name.c_str(), thread.percent);
+    }
+}
+
+void SettingsTab(const OverlayModel& model, OverlayActions* actions) {
+    if (!model.settings) {
+        ImGui::TextDisabled("n/a");
+        return;
+    }
+    const AcreIni& ini = *model.settings;
+    ImGui::SeparatorText("Display");
+    Checkbox(actions, "display", "fullscreen", "Fullscreen", ini.fullscreen);
+    Checkbox(actions, "display", "vsync", "VSync", ini.vsync);
+    IntSlider(actions, "display", "display_index", "Monitor", ini.display_index, 0, 3);
+    ImGui::SeparatorText("Performance");
+    Checkbox(actions, "performance", "fps60", "60 fps", ini.fps60);
+    Combo(actions, "performance", "resolution_scale", "Resolution scale",
+          std::array{"0.5", "0.75", "1", "1.5", "2", "3", "4"}, ini.resolution_scale);
+    Combo(actions, "performance", "scaling_filter", "Scaling filter",
+          std::array{"nearest", "bilinear", "bicubic", "gaussian", "scaleforce", "fsr"}, ini.scaling_filter);
+    Checkbox(actions, "performance", "reactive_flushing", "Reactive flushing", ini.reactive_flushing);
+    Checkbox(actions, "performance", "fastmem", "Fastmem", ini.fastmem);
+    IntSlider(actions, "performance", "fastmem_demote_after", "Fastmem demote after", ini.fastmem_demote_after, 0, 64);
+    ImGui::SeparatorText("Audio");
+    IntSlider(actions, "audio", "volume", "Volume", ini.volume, 0, 100);
+    ImGui::SeparatorText("Controls and overlay");
+    Combo(actions, "controls", "preset", "Controls", std::array{"keyboard", "steam_controller", "custom"}, ini.preset);
+    Checkbox(actions, "overlay", "fps_counter", "FPS counter", ini.fps_counter);
+    ImGui::TextDisabled("Overlay key %s, controller %s (edit in astralchain.ini)", ini.overlay_key.c_str(),
+                        ini.overlay_pad.c_str());
+    ImGui::Spacing();
+    if (ImGui::Button("Save to ini") && actions) actions->save = true;
+    if (!model.save_message.empty()) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted(model.save_message.c_str());
+    }
+}
+
+void AotTab(const OverlayModel& model) {
+    const auto& aot = model.aot;
+    ImGui::SeparatorText("Blocks dispatched per core");
+    if (aot.statistics) {
+        ImGui::Text("%llu  %llu  %llu  %llu", static_cast<unsigned long long>(aot.blocks[0]),
+                    static_cast<unsigned long long>(aot.blocks[1]), static_cast<unsigned long long>(aot.blocks[2]),
+                    static_cast<unsigned long long>(aot.blocks[3]));
+    } else {
+        ImGui::TextDisabled("n/a (run with --recomp-stats)");
+    }
+    ImGui::SeparatorText("Fallbacks to the JIT");
+    size_t new_roots = 0;
+    for (const auto& site : aot.sites) new_roots += site.reason == "missing_block";
+    ImGui::Text("%zu sites, %zu new roots", aot.sites.size(), new_roots);
+    if (aot.dropped_sites) ImGui::Text("%llu more not recorded", static_cast<unsigned long long>(aot.dropped_sites));
+    if (!aot.sites.empty() && ImGui::BeginTable("sites", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                                                ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 8))) {
+        ImGui::TableSetupColumn("Place");
+        ImGui::TableSetupColumn("Reason");
+        ImGui::TableSetupColumn("Count");
+        ImGui::TableHeadersRow();
+        for (const auto& site : aot.sites) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s+0x%llx", site.module.c_str(), static_cast<unsigned long long>(site.offset));
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(site.reason.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%llu", static_cast<unsigned long long>(site.count));
+        }
+        ImGui::EndTable();
+    }
+    ImGui::SeparatorText("Fastmem");
+    ImGui::Text("%llu faults, %llu functions demoted", static_cast<unsigned long long>(aot.fm_faults),
+                static_cast<unsigned long long>(aot.fm_demotions));
+}
+
+void LogTab(const OverlayModel& model, int& log_level) {
+    static constexpr std::array<const char*, 6> levels{"Trace", "Debug", "Info", "Warning", "Error", "Critical"};
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+    ImGui::Combo("Level", &log_level, levels.data(), static_cast<int>(levels.size()));
+    if (ImGui::BeginChild("log", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+        for (const auto& line : model.log_lines) ImGui::TextUnformatted(line.c_str());
+        // Right stick scrolls the log.
+        const float scroll = ImGui::GetKeyData(ImGuiKey_GamepadRStickDown)->AnalogValue -
+                             ImGui::GetKeyData(ImGuiKey_GamepadRStickUp)->AnalogValue;
+        if (scroll != 0) ImGui::SetScrollY(ImGui::GetScrollY() + scroll * ImGui::GetFontSize() * 1.5f);
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1) ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+}
+} // namespace
+
+void OverlayUi::SelectTab(OverlayTab tab_) {
+    tab = tab_;
+    tab_requested = true;
+}
+
+VideoCore::OverlayDrawData OverlayUi::BuildFrame(const OverlayModel& model, OverlayActions* actions) {
     VideoCore::OverlayDrawData out;
     out.width = width;
     out.height = height;
@@ -198,12 +343,51 @@ VideoCore::OverlayDrawData OverlayUi::BuildFrame(const OverlayModel& model) {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(width, height);
     io.DeltaTime = 1.0f / 60.0f;
+    // Sized for 1080p and scaled up with the window, so it reads the same on a 4K screen.
+    const float scale = std::max(1.0f, height / 1080.0f);
+    if (scale != ui_scale) {
+        ui_scale = scale;
+        ImGuiStyle& style = ImGui::GetStyle();
+        style = ImGuiStyle();
+        ImGui::StyleColorsDark(&style);
+        style.ScaleAllSizes(scale);
+        style.FontScaleMain = scale;
+    }
     ImGui::NewFrame();
     if (model.fps_counter) {
         BuildFpsCounter(model);
     }
     if (model.open) {
-        BuildPanel(model);
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1)) SelectTab(static_cast<OverlayTab>((static_cast<int>(tab) + 3) % 4));
+        if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1)) SelectTab(static_cast<OverlayTab>((static_cast<int>(tab) + 1) % 4));
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(16 * scale, 16 * scale), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(std::min(620.0f * scale, viewport->Size.x - 32 * scale),
+                                        viewport->Size.y - 32 * scale),
+                                 ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                                           ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+        if (ImGui::Begin("AstralChainRe   (Insert / L3+R3 closes, L/R change tab)", nullptr, flags)) {
+            if (ImGui::BeginTabBar("tabs")) {
+                for (int i = 0; i < 4; ++i) {
+                    const bool select = tab_requested && static_cast<int>(tab) == i;
+                    if (ImGui::BeginTabItem(kTabNames[i], nullptr, select ? ImGuiTabItemFlags_SetSelected : 0)) {
+                        if (!tab_requested) tab = static_cast<OverlayTab>(i);
+                        switch (static_cast<OverlayTab>(i)) {
+                        case OverlayTab::Performance: PerformanceTab(model); break;
+                        case OverlayTab::Settings: SettingsTab(model, actions); break;
+                        case OverlayTab::Aot: AotTab(model); break;
+                        case OverlayTab::Log: LogTab(model, log_level); break;
+                        }
+                        ImGui::EndTabItem();
+                    }
+                }
+                tab_requested = false;
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
     }
     ImGui::Render();
     Convert(*ImGui::GetDrawData(), out);

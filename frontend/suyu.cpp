@@ -1068,7 +1068,8 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, HeadlessSignalHandler);
     termination = "running";
     if (sdl_window && !headless) {
-        auto overlay = MakeAcreOverlay(acre_ini, overlay_open, *sdl_window, system, input_subsystem);
+        auto overlay = MakeAcreOverlay(acre_ini, acre_ini_found, overlay_open, *sdl_window, system,
+                                       input_subsystem);
         sdl_window->SetOverlay(overlay);
         system.Renderer().SetFrameOverlay(std::move(overlay));
     }

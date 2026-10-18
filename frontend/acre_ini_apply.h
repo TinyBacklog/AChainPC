@@ -17,6 +17,8 @@ AcreIni LoadAcreIni(const std::filesystem::path& path);
 /// Writes the ini's values into Settings::values (vsync, volume, player 1 controls)
 /// and remembers the display index for window creation.
 void ApplyAcreIni(const AcreIni& ini);
+/// Player 1's bindings from the ini's control preset (part of ApplyAcreIni).
+void ApplyAcreControls(const AcreIni& ini);
 
 /// Display chosen by the applied ini (0 = primary).
 int AcreDisplayIndex();
