@@ -4,10 +4,12 @@
 #include <array>
 #include <charconv>
 #include <list>
+#include <vector>
 
 #include <SimpleIni.h>
 
 #include "frontend/acre_ini.h"
+#include "frontend/overlay/chord.h"
 
 namespace {
 
@@ -156,6 +158,21 @@ AcreIni ParseAcreIni(const std::string& text) {
                 } else {
                     warn(section, key, "unknown filter '" + value + "'; using fsr");
                 }
+            } else if (section == "overlay" && key == "key") {
+                if (value.empty()) {
+                    warn(section, key, "expected a key name such as Insert");
+                } else {
+                    ini.overlay_key = value;
+                }
+            } else if (section == "overlay" && key == "pad") {
+                std::vector<int> buttons;
+                if (ParseChord(value, buttons)) {
+                    ini.overlay_pad = value;
+                } else {
+                    warn(section, key, "expected gamepad buttons joined by '+', got '" + value + "'");
+                }
+            } else if (section == "overlay" && key == "fps_counter") {
+                if (!ParseBool(value, ini.fps_counter)) warn(section, key, "expected true or false, got '" + value + "'");
             } else if (section == "controls" && key == "preset") {
                 if (value == "steam_controller" || value == "keyboard" || value == "custom") {
                     ini.preset = value;

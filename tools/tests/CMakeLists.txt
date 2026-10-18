@@ -56,10 +56,11 @@ add_test(NAME lifter_exclusive COMMAND lifter_exclusive)
 set_tests_properties(lifter_exclusive PROPERTIES LABELS lifter)
 
 # astralchain.ini parser (frontend/acre_ini.cpp); pure, links only simpleini.
-add_executable(test_acre_ini test_acre_ini.cpp ${PROJECT_SOURCE_DIR}/frontend/acre_ini.cpp)
+add_executable(test_acre_ini test_acre_ini.cpp ${PROJECT_SOURCE_DIR}/frontend/acre_ini.cpp
+               ${PROJECT_SOURCE_DIR}/frontend/overlay/chord.cpp)
 target_include_directories(test_acre_ini PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_features(test_acre_ini PRIVATE cxx_std_20)
-target_link_libraries(test_acre_ini PRIVATE SimpleIni::SimpleIni)
+target_link_libraries(test_acre_ini PRIVATE SimpleIni::SimpleIni SDL3::SDL3)
 target_compile_definitions(test_acre_ini PRIVATE ACRE_INI_TEMPLATE="${PROJECT_SOURCE_DIR}/frontend/astralchain.ini")
 add_test(NAME frontend_acre_ini COMMAND test_acre_ini)
 set_tests_properties(frontend_acre_ini PROPERTIES LABELS frontend)
@@ -107,3 +108,10 @@ target_link_libraries(test_chord PRIVATE acre_overlay)
 target_compile_features(test_chord PRIVATE cxx_std_20)
 add_test(NAME frontend_chord COMMAND test_chord)
 set_tests_properties(frontend_chord PROPERTIES LABELS frontend)
+
+# Saving astralchain.ini without losing comments (frontend/ini_rewrite.cpp).
+add_executable(test_ini_rewrite test_ini_rewrite.cpp ${PROJECT_SOURCE_DIR}/frontend/ini_rewrite.cpp)
+target_include_directories(test_ini_rewrite PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_features(test_ini_rewrite PRIVATE cxx_std_20)
+add_test(NAME frontend_ini_rewrite COMMAND test_ini_rewrite)
+set_tests_properties(frontend_ini_rewrite PROPERTIES LABELS frontend)

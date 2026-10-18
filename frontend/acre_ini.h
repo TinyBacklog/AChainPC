@@ -32,6 +32,12 @@ struct AcreIni {
     std::string resolution_scale = "1"; // 0.5, 0.75, 1, 1.5, 2, 3 or 4
     /// nearest, bilinear, bicubic, gaussian, scaleforce or fsr.
     std::string scaling_filter = "fsr";
+    /// Opens and closes the overlay: an SDL key name, and gamepad buttons
+    /// joined by '+' (see ParseChord).
+    std::string overlay_key = "Insert";
+    std::string overlay_pad = "l3+r3";
+    /// Small fps counter in a corner, independent of the overlay.
+    bool fps_counter = false;
     /// steam_controller, keyboard or custom.
     std::string preset = "keyboard";
     /// With preset = custom: input name (button_a, lstick, ...) -> suyu parameter string.

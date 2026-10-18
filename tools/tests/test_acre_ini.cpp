@@ -90,6 +90,26 @@ int main() {
         CHECK(HasWarning(ini, "sometimes"));
     }
     {
+        const AcreIni ini = ParseAcreIni("");
+        CHECK(ini.overlay_key == "Insert");
+        CHECK(ini.overlay_pad == "l3+r3");
+        CHECK(!ini.fps_counter);
+    }
+    {
+        const AcreIni ini = ParseAcreIni("[overlay]\nkey = F10\npad = back+start\nfps_counter = true\n");
+        CHECK(ini.overlay_key == "F10");
+        CHECK(ini.overlay_pad == "back+start");
+        CHECK(ini.fps_counter);
+        CHECK(ini.warnings.empty());
+    }
+    {
+        const AcreIni ini = ParseAcreIni("[overlay]\npad = l3+banana\nfps_counter = often\n");
+        CHECK(ini.overlay_pad == "l3+r3");
+        CHECK(!ini.fps_counter);
+        CHECK(HasWarning(ini, "banana"));
+        CHECK(HasWarning(ini, "often"));
+    }
+    {
         const AcreIni ini = ParseAcreIni("[performance]\nfastmem = false\nfastmem_demote_after = 0\n");
         CHECK(!ini.fastmem);
         CHECK(ini.fastmem_demote_after == 0);

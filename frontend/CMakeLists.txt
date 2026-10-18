@@ -26,9 +26,18 @@ if (SUYU_CMD OR YUZU_CMD)
         overlay/frame_stats.h
         overlay/overlay_ui.cpp
         overlay/overlay_ui.h
+        ini_rewrite.cpp
+        ini_rewrite.h
     )
     target_include_directories(acre_overlay PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/runtime)
     target_link_libraries(acre_overlay PUBLIC common imgui SDL3::SDL3)
+    # The commented astralchain.ini, for Save when the player has no ini yet.
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/astralchain.ini _acre_ini_text)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/astralchain.ini)
+    file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/acre_ini_template.h
+         CONTENT "#pragma once\ninline constexpr char kAcreIniTemplate[] = R\"ACREINI(@_acre_ini_text@)ACREINI\";\n"
+         @ONLY)
+    target_include_directories(acre_overlay PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
     set(SUYU_CMD_SOURCES
         emu_window/emu_window_sdl2.cpp
