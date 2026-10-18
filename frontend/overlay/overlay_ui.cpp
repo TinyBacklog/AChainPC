@@ -157,6 +157,10 @@ void OverlayUi::QueueInput(const OverlayInput& input) {
             io.AddKeyEvent(key, input.down);
         }
         break;
+    case OverlayInput::Kind::Reset:
+        io.ClearInputKeys();
+        io.ClearInputMouse();
+        break;
     case OverlayInput::Kind::PadAxis:
         switch (input.code) {
         case SDL_GAMEPAD_AXIS_LEFTX: AddStick(io, ImGuiKey_GamepadLStickLeft, ImGuiKey_GamepadLStickRight, input.x); break;

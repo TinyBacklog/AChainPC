@@ -37,6 +37,8 @@ struct OverlaySources {
     std::function<OverlayAotView()> aot;
     std::function<std::vector<std::string>(int min_level)> log_lines;
     LiveTargets live;                       // called on the main thread
+    /// Window pixels per point; mouse events come in points. 1 when unset.
+    std::function<float()> pixel_density;
 };
 
 struct OverlayConfig {
@@ -62,6 +64,8 @@ public:
     void OnFrameDisplayed();
     /// Main thread: applies settings changed in the overlay and saves the ini.
     void RunMainActions();
+    /// The input queued for the next frame, taken out of the queue.
+    std::vector<OverlayInput> TakePendingInput();
 
     const VideoCore::OverlayFontAtlas& Font() override;
     VideoCore::OverlayDrawData Build(float width, float height) override;

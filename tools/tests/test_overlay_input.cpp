@@ -128,6 +128,38 @@ int main() {
         CHECK(!overlay.OnSdlEvent(Key(SDL_SCANCODE_W, true)));
         overlay.Build(1280, 720);                                   // builds without input
     }
+    {
+        // Reopening starts the overlay's own input clean: a direction held
+        // when it closed does not keep scrolling (the queue starts with a reset).
+        Log log;
+        AcreOverlay overlay(Config(), std::make_unique<FakeGameInput>(log));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, true));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, false));
+        overlay.OnSdlEvent(Pad(1, SDL_GAMEPAD_BUTTON_DPAD_DOWN, true));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, true));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, false));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, true));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, false));
+        const auto input = overlay.TakePendingInput();
+        CHECK(!input.empty() && input.front().kind == OverlayInput::Kind::Reset);
+    }
+    {
+        // Mouse positions arrive in window points; the overlay works in pixels.
+        Log log;
+        OverlaySources sources;
+        sources.pixel_density = [] { return 2.0f; };
+        AcreOverlay overlay(Config(), std::make_unique<FakeGameInput>(log), std::move(sources));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, true));
+        overlay.OnSdlEvent(Key(SDL_SCANCODE_INSERT, false));
+        overlay.TakePendingInput();
+        SDL_Event motion{};
+        motion.type = SDL_EVENT_MOUSE_MOTION;
+        motion.motion.x = 100;
+        motion.motion.y = 50;
+        overlay.OnSdlEvent(motion);
+        const auto input = overlay.TakePendingInput();
+        CHECK(input.size() == 1 && input[0].x == 200 && input[0].y == 100);
+    }
     if (failures) { std::printf("%d failures\n", failures); return 1; }
     std::printf("overlay input: key, chord, release on open, unplug and start open passed\n");
     return 0;

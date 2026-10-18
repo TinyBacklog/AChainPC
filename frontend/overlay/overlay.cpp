@@ -16,6 +16,7 @@ AcreOverlay::AcreOverlay(OverlayConfig config_, std::unique_ptr<GameInput> game_
 AcreOverlay::~AcreOverlay() = default;
 
 bool AcreOverlay::OnSdlEvent(const SDL_Event& event) {
+    const float density = sources.pixel_density ? sources.pixel_density() : 1.0f;
     const auto queue = [&](const OverlayInput& input) {
         std::scoped_lock lock{mutex};
         pending_input.push_back(input);
@@ -48,7 +49,7 @@ bool AcreOverlay::OnSdlEvent(const SDL_Event& event) {
     }
     case SDL_EVENT_MOUSE_MOTION:
         if (!open) return false;
-        queue({OverlayInput::Kind::MouseMove, 0, false, event.motion.x, event.motion.y});
+        queue({OverlayInput::Kind::MouseMove, 0, false, event.motion.x * density, event.motion.y * density});
         return true;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP: {
@@ -57,8 +58,8 @@ bool AcreOverlay::OnSdlEvent(const SDL_Event& event) {
             mouse_held = down;
             return false;
         }
-        queue({OverlayInput::Kind::MouseButton, event.button.button, down, event.button.x,
-               event.button.y});
+        queue({OverlayInput::Kind::MouseButton, event.button.button, down, event.button.x * density,
+               event.button.y * density});
         return true;
     }
     case SDL_EVENT_MOUSE_WHEEL:
@@ -121,6 +122,9 @@ void AcreOverlay::Open() {
     open = true;
     std::scoped_lock lock{mutex};
     shown_open = true;
+    // Whatever the overlay saw held when it last closed is gone now.
+    pending_input.clear();
+    pending_input.push_back({OverlayInput::Kind::Reset});
 }
 
 void AcreOverlay::Close() {
@@ -139,6 +143,13 @@ void AcreOverlay::OnFrameDisplayed() {
 
 const VideoCore::OverlayFontAtlas& AcreOverlay::Font() {
     return ui.Font();
+}
+
+std::vector<OverlayInput> AcreOverlay::TakePendingInput() {
+    std::vector<OverlayInput> inputs;
+    std::scoped_lock lock{mutex};
+    inputs.swap(pending_input);
+    return inputs;
 }
 
 void AcreOverlay::RunMainActions() {
@@ -175,8 +186,8 @@ VideoCore::OverlayDrawData AcreOverlay::Build(float width, float height) {
         std::scoped_lock lock{mutex};
         model.open = shown_open;
         model.save_message = save_message;
-        inputs.swap(pending_input);
     }
+    inputs = TakePendingInput();
     model.fps_counter = fps_counter;
     if (!model.open && !model.fps_counter) {
         return {};

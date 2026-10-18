@@ -594,6 +594,11 @@ void EmuWindow_SDL2::SetOverlay(std::shared_ptr<AcreOverlay> overlay_) {
     overlay = std::move(overlay_);
 }
 
+float EmuWindow_SDL2::PixelDensity() const {
+    const float density = render_window ? SDL_GetWindowPixelDensity(render_window) : 0.0f;
+    return density > 0 ? density : 1.0f;
+}
+
 void EmuWindow_SDL2::SetFullscreen(bool on) {
     if (on) {
         Fullscreen();
@@ -963,6 +968,7 @@ std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini,
         return Common::Log::RecentLines(200, static_cast<Common::Log::Level>(min_level));
     };
     sources.live.fullscreen = [&window](bool on) { window.SetFullscreen(on); };
+    sources.pixel_density = [&window] { return window.PixelDensity(); };
     sources.live.log_enabled = [](bool on) { Common::Log::SetWriteEnabled(on); };
     sources.live.fastmem_demote_after = [](int n) { acre_fm_set_demote_after(static_cast<unsigned>(n)); };
     sources.live.controls_preset = [&system, ini](const std::string& preset) {

@@ -52,6 +52,8 @@ public:
     void SetOverlay(std::shared_ptr<AcreOverlay> overlay_);
     /// Main thread.
     void SetFullscreen(bool on);
+    /// Window pixels per point (2 on a 200% desktop).
+    float PixelDensity() const;
 
     void WaitEvent();
 

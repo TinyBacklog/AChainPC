@@ -18,7 +18,8 @@ struct ImGuiContext;
 /// One input event for the overlay, in SDL terms (scancodes, gamepad buttons
 /// and axes), converted to ImGui on the thread that builds the frames.
 struct OverlayInput {
-    enum class Kind { Key, MouseMove, MouseButton, MouseWheel, PadButton, PadAxis };
+    /// Reset forgets every key, button and axis held: the overlay reopens clean.
+    enum class Kind { Key, MouseMove, MouseButton, MouseWheel, PadButton, PadAxis, Reset };
     Kind kind = Kind::Key;
     int code = 0;      // scancode, mouse button, gamepad button or axis
     bool down = false;
