@@ -77,16 +77,16 @@ int main() {
         const AcreIni ini = ParseAcreIni("");
         CHECK(ini.fastmem);
         CHECK(ini.fastmem_demote_after == 16);
-        CHECK(ini.reactive_flushing);
+        CHECK(!ini.reactive_flushing);
     }
     {
-        const AcreIni ini = ParseAcreIni("[performance]\nreactive_flushing = false\n");
-        CHECK(!ini.reactive_flushing);
+        const AcreIni ini = ParseAcreIni("[performance]\nreactive_flushing = true\n");
+        CHECK(ini.reactive_flushing);
         CHECK(ini.warnings.empty());
     }
     {
         const AcreIni ini = ParseAcreIni("[performance]\nreactive_flushing = sometimes\n");
-        CHECK(ini.reactive_flushing);
+        CHECK(!ini.reactive_flushing);
         CHECK(HasWarning(ini, "sometimes"));
     }
     {
