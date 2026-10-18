@@ -88,3 +88,10 @@ target_include_directories(test_read_area_cache PRIVATE ${PROJECT_SOURCE_DIR}/ru
 target_compile_features(test_read_area_cache PRIVATE cxx_std_20)
 add_test(NAME runtime_read_area_cache COMMAND test_read_area_cache)
 set_tests_properties(runtime_read_area_cache PROPERTIES LABELS lifter)
+
+# Overlay UI (frontend/overlay): Dear ImGui frames converted to plain draw data.
+add_executable(test_overlay_ui test_overlay_ui.cpp)
+target_link_libraries(test_overlay_ui PRIVATE acre_overlay)
+target_compile_features(test_overlay_ui PRIVATE cxx_std_20)
+add_test(NAME frontend_overlay_ui COMMAND test_overlay_ui)
+set_tests_properties(frontend_overlay_ui PROPERTIES LABELS frontend)

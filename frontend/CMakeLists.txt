@@ -18,6 +18,14 @@ if (NOT ASTRALCHAIN_RECOMP_DIR AND SUYU_CMD_RECOMP_DIR)
 endif()
 
 if (SUYU_CMD OR YUZU_CMD)
+    # In-game overlay: Dear ImGui layout and its conversion to video_core draw data.
+    add_library(acre_overlay STATIC
+        overlay/overlay_ui.cpp
+        overlay/overlay_ui.h
+    )
+    target_include_directories(acre_overlay PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/runtime)
+    target_link_libraries(acre_overlay PUBLIC common imgui)
+
     set(SUYU_CMD_SOURCES
         emu_window/emu_window_sdl2.cpp
         emu_window/emu_window_sdl2.h
@@ -182,7 +190,7 @@ if (SUYU_CMD OR YUZU_CMD)
             )
         endif()
 
-        target_link_libraries(${_t} PRIVATE common core input_common frontend_common)
+        target_link_libraries(${_t} PRIVATE common core input_common frontend_common acre_overlay)
         target_link_libraries(${_t} PRIVATE glad)
         if (MSVC)
             target_link_libraries(${_t} PRIVATE getopt)

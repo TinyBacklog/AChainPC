@@ -109,6 +109,16 @@ endif()
 # SimpleIni
 AddJsonPackage(simpleini)
 
+# Dear ImGui, core only: the overlay feeds it input by hand and draws its output
+# through video_core, so none of its platform or renderer backends are built.
+AddJsonPackage(NAME imgui DOWNLOAD_ONLY)
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
+
 # Most linux distros don't package cubeb, so enable regardless of cpm settings
 if(ENABLE_CUBEB)
     AddJsonPackage(cubeb)
