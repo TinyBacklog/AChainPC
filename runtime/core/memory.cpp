@@ -683,14 +683,20 @@ struct Memory::Impl {
             gpu_device_memory = &system.Host1x().MemoryManager();
         }
         const size_t core = system.GetCurrentHostThreadID();
-        auto& current_area = rasterizer_read_areas[core];
+        auto& cache = rasterizer_read_areas[core];
         gpu_device_memory->ApplyOpOnPointer(p, scratch_buffers[core], [&](DAddr address) {
             const DAddr end_address = address + size;
-            if (current_area.start_address <= address && end_address <= current_area.end_address)
-                [[likely]] {
-                return;
+            for (const auto& area : cache.areas) {
+                if (area.start_address <= address && end_address <= area.end_address) {
+                    return;
+                }
             }
-            current_area = system.GPU().OnCPURead(address, size);
+            // A miss locks the texture cache, which the GPU thread holds for long
+            // stretches. Games read back and forth between a few pages (a memcmp
+            // of two buffers), so one remembered area per core missed nearly
+            // every time.
+            cache.areas[cache.next] = system.GPU().OnCPURead(address, size);
+            cache.next = (cache.next + 1) % cache.areas.size();
         });
     }
 
@@ -762,7 +768,11 @@ struct Memory::Impl {
     Tegra::MaxwellDeviceMemoryManager* gpu_device_memory{};
     Common::PageTable* current_page_table = nullptr;
 
-    std::array<VideoCore::RasterizerDownloadArea, Core::Hardware::NUM_CPU_CORES> rasterizer_read_areas{};
+    struct ReadAreaCache {
+        std::array<VideoCore::RasterizerDownloadArea, 8> areas{};
+        size_t next = 0;
+    };
+    std::array<ReadAreaCache, Core::Hardware::NUM_CPU_CORES> rasterizer_read_areas{};
     std::array<GPUDirtyState, Core::Hardware::NUM_CPU_CORES> rasterizer_write_areas{};
     std::array<Common::ScratchBuffer<u32>, Core::Hardware::NUM_CPU_CORES> scratch_buffers{};
     std::span<Core::GPUDirtyMemoryManager> gpu_dirty_managers;
