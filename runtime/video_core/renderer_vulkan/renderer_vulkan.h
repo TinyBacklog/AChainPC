@@ -13,6 +13,7 @@
 #include "common/dynamic_library.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/renderer_base.h"
+#include "video_core/renderer_vulkan/present/overlay_pass.h"
 #include "video_core/renderer_vulkan/vk_blit_screen.h"
 #include "video_core/renderer_vulkan/vk_present_manager.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -70,6 +71,7 @@ private:
     VkCommandBuffer BeginSingleTimeCommands();
     void EndSingleTimeCommands(VkCommandBuffer command_buffer);
     void Report() const;
+    void DrawFrameOverlay(Frame& frame);
 
     vk::Buffer RenderToBuffer(std::span<const Tegra::FramebufferConfig> framebuffers,
                               const Layout::FramebufferLayout& layout, VkFormat format,
@@ -99,6 +101,8 @@ private:
     BlitScreen blit_swapchain;
     BlitScreen blit_capture;
     BlitScreen blit_applet;
+    std::unique_ptr<OverlayPass> overlay_pass;
+    bool overlay_failed{false};
     RasterizerVulkan rasterizer;
     std::optional<TurboMode> turbo_mode;
 

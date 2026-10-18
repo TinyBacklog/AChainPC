@@ -109,6 +109,8 @@ add_library(video_core STATIC
     query_cache.h
     rasterizer_interface.h
     renderer_base.cpp
+    frame_overlay.h
+    overlay_draw_data.h
     renderer_base.h
 
     # Null
@@ -134,6 +136,8 @@ add_library(video_core STATIC
     renderer_vulkan/present/sgsr.h
     renderer_vulkan/present/util.cpp
     renderer_vulkan/present/util.h
+    renderer_vulkan/present/overlay_pass.cpp
+    renderer_vulkan/present/overlay_pass.h
     renderer_vulkan/present/window_adapt_pass.cpp
     renderer_vulkan/present/window_adapt_pass.h
     renderer_vulkan/blit_image.cpp

@@ -223,12 +223,37 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
     blit_swapchain.DrawToFrame(device, rasterizer, frame, framebuffers,
                                render_window.GetFramebufferLayout(), swapchain.GetImageCount(),
                                swapchain.GetImageViewFormat());
+    DrawFrameOverlay(*frame);
     scheduler.Flush(*frame->render_ready);
 
     present_manager.Present(frame);
 
     gpu.RendererFrameEndNotify();
     rasterizer.TickFrame();
+}
+
+void RendererVulkan::DrawFrameOverlay(Frame& frame) {
+    const auto overlay = GetFrameOverlay();
+    if (!overlay || overlay_failed) {
+        return;
+    }
+    auto data = overlay->Build(static_cast<float>(frame.width), static_cast<float>(frame.height));
+    if (data.empty()) {
+        return;
+    }
+    try {
+        const VkFormat format = swapchain.GetImageViewFormat();
+        if (!overlay_pass || overlay_pass->Format() != format) {
+            overlay_pass.reset();
+            overlay_pass = std::make_unique<OverlayPass>(device, memory_allocator, scheduler, format,
+                                                         overlay->Font());
+        }
+        overlay_pass->Draw(frame, std::move(data));
+    } catch (const vk::Exception& exception) {
+        LOG_ERROR(Render_Vulkan, "Overlay disabled: {}", exception.what());
+        overlay_pass.reset();
+        overlay_failed = true;
+    }
 }
 
 void RendererVulkan::Report() const {

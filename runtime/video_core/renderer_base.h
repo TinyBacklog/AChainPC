@@ -6,11 +6,13 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "common/common_funcs.h"
 #include "common/common_types.h"
 #include "core/frontend/framebuffer_layout.h"
+#include "video_core/frame_overlay.h"
 #include "video_core/gpu.h"
 #include "video_core/rasterizer_interface.h"
 
@@ -101,7 +103,18 @@ public:
     void RequestScreenshot(void* data, std::function<void(bool)> callback,
                            const Layout::FramebufferLayout& layout);
 
+    /// Installs (or removes, with nullptr) the frontend overlay; any thread.
+    void SetFrameOverlay(std::shared_ptr<FrameOverlay> overlay) {
+        std::scoped_lock lock{frame_overlay_mutex};
+        frame_overlay = std::move(overlay);
+    }
+
 protected:
+    std::shared_ptr<FrameOverlay> GetFrameOverlay() {
+        std::scoped_lock lock{frame_overlay_mutex};
+        return frame_overlay;
+    }
+
     Core::Frontend::EmuWindow& render_window; ///< Reference to the render window handle.
     std::unique_ptr<Core::Frontend::GraphicsContext> context;
     f32 m_current_fps = 0.0f; ///< Current framerate, should be set by the renderer
@@ -110,6 +123,9 @@ protected:
     RendererSettings renderer_settings;
 
 private:
+    std::mutex frame_overlay_mutex;
+    std::shared_ptr<FrameOverlay> frame_overlay;
+
     /// Updates the framebuffer layout of the contained render window handle.
     void UpdateCurrentFramebufferLayout();
 };

@@ -53,6 +53,7 @@
 #include "frontend_common/content_manager.h"
 #include "frontend/acre_ini_apply.h"
 #include "frontend/acre_tas.h"
+#include "frontend/overlay/overlay_ui.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
@@ -260,6 +261,26 @@ bool g_native_export_mode = false;
 // which leaves no way to read the frame rate. This puts it back on demand.
 bool g_show_fps = false;
 
+// --overlay-test (not in --help): the overlay panel and fps counter drawn on
+// every frame with no input, to check the renderer side on its own.
+class OverlayRendererTest final : public VideoCore::FrameOverlay {
+public:
+    const VideoCore::OverlayFontAtlas& Font() override {
+        return ui.Font();
+    }
+    VideoCore::OverlayDrawData Build(float width, float height) override {
+        ui.SetDisplaySize(width, height);
+        OverlayModel model;
+        model.open = true;
+        model.fps_counter = true;
+        model.fps = 60;
+        return ui.BuildFrame(model);
+    }
+
+private:
+    OverlayUi ui;
+};
+
 /// Set by the SIGINT handler below; polled by the --headless run loop, which
 /// has no window/event queue of its own to notice a Ctrl+C through.
 static volatile std::sig_atomic_t g_headless_interrupted = 0;
@@ -402,6 +423,7 @@ int main(int argc, char** argv) {
 
     bool use_multiplayer = false;
     bool fullscreen = false;
+    bool overlay_test = false;
     bool headless = false;
     bool recomp_strict = false;
     std::string recomp_report;
@@ -432,6 +454,7 @@ int main(int argc, char** argv) {
         {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
         {"show-fps", no_argument, 0, 'F'},
+        {"overlay-test", no_argument, 0, 'O'},
         {"exit-after", required_argument, 0, 'E'},
         {"tas-play", no_argument, 0, 'P'},
         {"tas-record", no_argument, 0, 'W'},
@@ -464,6 +487,9 @@ int main(int argc, char** argv) {
                 break;
             case 'F':
                 g_show_fps = true;
+                break;
+            case 'O':
+                overlay_test = true;
                 break;
             case 'U': break; // Applied before logging/config initialization.
             case 'S': recomp_strict = true; break;
@@ -1061,6 +1087,9 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, HeadlessSignalHandler);
     std::signal(SIGTERM, HeadlessSignalHandler);
     termination = "running";
+    if (overlay_test) {
+        system.Renderer().SetFrameOverlay(std::make_shared<OverlayRendererTest>());
+    }
     void(system.Run());
     // Service initialization may require the scheduler to run. Synchronize
     // startup before accepting an immediate shutdown from the run loop.
