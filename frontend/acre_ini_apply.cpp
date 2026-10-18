@@ -104,6 +104,7 @@ void ApplyAcreIni(const AcreIni& ini) {
     Settings::values.volume.SetValue(static_cast<u8>(ini.volume));
     acre_fps60 = ini.fps60 ? 1 : 0;
     acre_fm_configure(ini.fastmem ? 1 : 0, static_cast<unsigned>(ini.fastmem_demote_after));
+    Settings::values.use_reactive_flushing.SetValue(ini.reactive_flushing);
     Settings::values.resolution_setup.SetValue(ResolutionFor(ini.resolution_scale));
     Settings::values.scaling_filter.SetValue(FilterFor(ini.scaling_filter));
 
@@ -117,9 +118,9 @@ void ApplyAcreIni(const AcreIni& ini) {
         Bind(player, name, param);
     }
     LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
-             "fps60={}, fastmem={}, fastmem_demote_after={}, resolution_scale={}, scaling_filter={}",
+             "fps60={}, fastmem={}, fastmem_demote_after={}, reactive_flushing={}, resolution_scale={}, scaling_filter={}",
              ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60, ini.fastmem,
-             ini.fastmem_demote_after,
+             ini.fastmem_demote_after, ini.reactive_flushing,
              ini.resolution_scale, ini.scaling_filter);
 }
 

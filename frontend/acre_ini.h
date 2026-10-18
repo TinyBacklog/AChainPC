@@ -24,6 +24,9 @@ struct AcreIni {
     /// Faults of one inline access before its function falls back to the
     /// helpers for the rest of the session; 0 = never.
     int fastmem_demote_after = 16;
+    /// Sync GPU-written memory before the CPU reads it. Costs about 10% in
+    /// combat (texture cache lock on CPU reads); false risks stale readbacks.
+    bool reactive_flushing = true;
     /// Internal resolution multiplier, 1-4.
     std::string resolution_scale = "1"; // 0.5, 0.75, 1, 1.5, 2, 3 or 4
     /// nearest, bilinear, bicubic, gaussian, scaleforce or fsr.

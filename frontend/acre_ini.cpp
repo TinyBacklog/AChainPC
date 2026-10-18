@@ -131,6 +131,8 @@ AcreIni ParseAcreIni(const std::string& text) {
                 if (!ParseBool(value, ini.fps60)) warn(section, key, "expected true or false, got '" + value + "'");
             } else if (section == "performance" && key == "fastmem") {
                 if (!ParseBool(value, ini.fastmem)) warn(section, key, "expected true or false, got '" + value + "'");
+            } else if (section == "performance" && key == "reactive_flushing") {
+                if (!ParseBool(value, ini.reactive_flushing)) warn(section, key, "expected true or false, got '" + value + "'");
             } else if (section == "performance" && key == "fastmem_demote_after") {
                 int after = 0;
                 if (!ParseInt(value, after) || after < 0) {
