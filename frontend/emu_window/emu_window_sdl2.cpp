@@ -963,6 +963,7 @@ std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini,
         return Common::Log::RecentLines(200, static_cast<Common::Log::Level>(min_level));
     };
     sources.live.fullscreen = [&window](bool on) { window.SetFullscreen(on); };
+    sources.live.log_enabled = [](bool on) { Common::Log::SetWriteEnabled(on); };
     sources.live.fastmem_demote_after = [](int n) { acre_fm_set_demote_after(static_cast<unsigned>(n)); };
     sources.live.controls_preset = [&system, ini](const std::string& preset) {
         AcreIni controls = ini;

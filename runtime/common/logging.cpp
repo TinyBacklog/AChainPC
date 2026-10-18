@@ -364,8 +364,10 @@ struct Impl {
 
     template<typename F>
     void ForEachBackend(F&& lambda) noexcept {
-        lambda(static_cast<Backend&>(color_console_backend));
         lambda(static_cast<Backend&>(recent_backend));
+        if (!write_enabled.load(std::memory_order_relaxed))
+            return;
+        lambda(static_cast<Backend&>(color_console_backend));
 #ifndef __OPENORBIS__
         if (file_backend)
             lambda(static_cast<Backend&>(*file_backend));
@@ -381,6 +383,7 @@ struct Impl {
     Filter filter;
     ColorConsoleBackend color_console_backend{};
     RecentBackend recent_backend{};
+    std::atomic<bool> write_enabled{true};
 #ifndef __OPENORBIS__
     std::optional<FileBackend> file_backend;
 #endif
@@ -424,6 +427,14 @@ void Stop() {
 void SetGlobalFilter(const Filter& filter) {
     if (logging_instance)
         logging_instance->filter = filter;
+}
+
+void SetWriteEnabled(bool enabled) {
+    if (!logging_instance)
+        return;
+    if (!enabled)
+        logging_instance->ForEachBackend([](Backend& backend) { backend.Flush(); });
+    logging_instance->write_enabled.store(enabled, std::memory_order_relaxed);
 }
 
 std::vector<std::string> RecentLines(std::size_t max, Level min_level) {

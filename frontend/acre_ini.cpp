@@ -158,6 +158,8 @@ AcreIni ParseAcreIni(const std::string& text) {
                 } else {
                     warn(section, key, "unknown filter '" + value + "'; using fsr");
                 }
+            } else if (section == "log" && key == "enabled") {
+                if (!ParseBool(value, ini.log_enabled)) warn(section, key, "expected true or false, got '" + value + "'");
             } else if (section == "overlay" && key == "key") {
                 if (value.empty()) {
                     warn(section, key, "expected a key name such as Insert");

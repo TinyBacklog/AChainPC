@@ -91,6 +91,7 @@ int main() {
     }
     {
         const AcreIni ini = ParseAcreIni("");
+        CHECK(ini.log_enabled);
         CHECK(ini.overlay_key == "Insert");
         CHECK(ini.overlay_pad == "l3+r3");
         CHECK(!ini.fps_counter);
@@ -101,6 +102,12 @@ int main() {
         CHECK(ini.overlay_pad == "back+start");
         CHECK(ini.fps_counter);
         CHECK(ini.warnings.empty());
+    }
+    {
+        const AcreIni off = ParseAcreIni("[log]\nenabled = false\n");
+        CHECK(!off.log_enabled && off.warnings.empty());
+        const AcreIni bad = ParseAcreIni("[log]\nenabled = loud\n");
+        CHECK(bad.log_enabled && HasWarning(bad, "loud"));
     }
     {
         const AcreIni ini = ParseAcreIni("[overlay]\npad = l3+banana\nfps_counter = often\n");

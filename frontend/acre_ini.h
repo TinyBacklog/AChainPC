@@ -38,6 +38,9 @@ struct AcreIni {
     std::string overlay_pad = "l3+r3";
     /// Small fps counter in a corner, independent of the overlay.
     bool fps_counter = false;
+    /// Write the log to its file and the console. The overlay's Log tab shows
+    /// it either way.
+    bool log_enabled = true;
     /// steam_controller, keyboard or custom.
     std::string preset = "keyboard";
     /// With preset = custom: input name (button_a, lstick, ...) -> suyu parameter string.

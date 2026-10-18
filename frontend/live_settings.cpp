@@ -28,7 +28,7 @@ SettingEffect EffectOf(std::string_view section, std::string_view key) {
     if ((section == "display" && (key == "vsync" || key == "fullscreen")) ||
         (section == "performance" && (key == "scaling_filter" || key == "fastmem_demote_after")) ||
         (section == "audio" && key == "volume") || (section == "controls" && key == "preset") ||
-        (section == "overlay" && key == "fps_counter")) {
+        (section == "overlay" && key == "fps_counter") || (section == "log" && key == "enabled")) {
         return SettingEffect::Live;
     }
     return SettingEffect::Restart;
@@ -59,6 +59,8 @@ void ApplyLiveSetting(const IniChange& change, const LiveTargets& targets) {
         if (targets.controls_preset) targets.controls_preset(change.value);
     } else if (section == "overlay" && key == "fps_counter" && ParseBool(change.value, flag)) {
         if (targets.fps_counter) targets.fps_counter(flag);
+    } else if (section == "log" && key == "enabled" && ParseBool(change.value, flag)) {
+        if (targets.log_enabled) targets.log_enabled(flag);
     }
 }
 
@@ -82,6 +84,8 @@ void UpdateAcreIni(AcreIni& ini, const IniChange& change) {
         ini.volume = std::clamp(number, 0, 100);
     } else if (section == "controls" && key == "preset") {
         ini.preset = value;
+    } else if (section == "log" && key == "enabled") {
+        ParseBool(value, ini.log_enabled);
     } else if (section == "overlay") {
         if (key == "fps_counter") ParseBool(value, ini.fps_counter);
         else if (key == "key") ini.overlay_key = value;

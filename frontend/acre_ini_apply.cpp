@@ -101,6 +101,8 @@ void ApplyAcreIni(const AcreIni& ini) {
     Settings::values.scaling_filter.SetValue(ScalingFilterFor(ini.scaling_filter));
 
     ApplyAcreControls(ini);
+    LOG_INFO(Frontend, "astralchain.ini: log {}", ini.log_enabled ? "on" : "off");
+    Common::Log::SetWriteEnabled(ini.log_enabled);
     LOG_INFO(Frontend, "astralchain.ini applied: preset={}, display={}, vsync={}, volume={}, "
              "fps60={}, fastmem={}, fastmem_demote_after={}, reactive_flushing={}, resolution_scale={}, scaling_filter={}",
              ini.preset, ini.display_index, ini.vsync, ini.volume, ini.fps60, ini.fastmem,

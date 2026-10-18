@@ -264,6 +264,7 @@ void SettingsTab(const OverlayModel& model, OverlayActions* actions) {
     ImGui::SeparatorText("Controls and overlay");
     Combo(actions, "controls", "preset", "Controls", std::array{"keyboard", "steam_controller", "custom"}, ini.preset);
     Checkbox(actions, "overlay", "fps_counter", "FPS counter", ini.fps_counter);
+    Checkbox(actions, "log", "enabled", "Write log to file", ini.log_enabled);
     ImGui::TextDisabled("Overlay key %s, controller %s (edit in astralchain.ini)", ini.overlay_key.c_str(),
                         ini.overlay_pad.c_str());
     ImGui::Spacing();

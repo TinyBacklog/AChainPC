@@ -24,6 +24,7 @@ struct LiveTargets {
     std::function<void(int)> fastmem_demote_after;
     std::function<void(const std::string&)> controls_preset;
     std::function<void(bool)> fps_counter;
+    std::function<void(bool)> log_enabled;
 };
 
 /// Applies `change` now if its effect is Live or Partial; does nothing for

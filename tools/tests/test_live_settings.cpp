@@ -23,12 +23,15 @@ int main() {
     CHECK(EffectOf("performance", "resolution_scale") == SettingEffect::Restart);
     CHECK(EffectOf("performance", "fastmem") == SettingEffect::Restart);
     CHECK(EffectOf("display", "display_index") == SettingEffect::Restart);
+    CHECK(EffectOf("log", "enabled") == SettingEffect::Live);
 
     bool fullscreen = false;
     int demote_after = -1;
     std::string preset;
     bool fps_counter = false;
+    bool log_enabled = true;
     LiveTargets targets;
+    targets.log_enabled = [&](bool on) { log_enabled = on; };
     targets.fullscreen = [&](bool on) { fullscreen = on; };
     targets.fastmem_demote_after = [&](int n) { demote_after = n; };
     targets.controls_preset = [&](const std::string& p) { preset = p; };
@@ -55,6 +58,8 @@ int main() {
     CHECK(preset == "steam_controller");
     ApplyLiveSetting({"overlay", "fps_counter", "true"}, targets);
     CHECK(fps_counter);
+    ApplyLiveSetting({"log", "enabled", "false"}, targets);
+    CHECK(!log_enabled);
 
     // Restart-only settings are not touched now.
     const auto resolution = Settings::values.resolution_setup.GetValue();
@@ -70,6 +75,8 @@ int main() {
     UpdateAcreIni(ini, {"audio", "volume", "70"});
     UpdateAcreIni(ini, {"controls", "preset", "steam_controller"});
     UpdateAcreIni(ini, {"overlay", "fps_counter", "true"});
+    UpdateAcreIni(ini, {"log", "enabled", "false"});
+    CHECK(!ini.log_enabled);
     CHECK(!ini.vsync && ini.fps60 && ini.resolution_scale == "1.5");
     CHECK(ini.fastmem_demote_after == 3 && ini.volume == 70);
     CHECK(ini.preset == "steam_controller" && ini.fps_counter);

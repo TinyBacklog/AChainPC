@@ -142,6 +142,10 @@ void Stop();
 void SetGlobalFilter(const Filter& filter);
 void SetColorConsoleBackendEnabled(bool enabled);
 
+/// Turns writing to the console and the log file on or off; the recent lines
+/// (RecentLines) are kept either way.
+void SetWriteEnabled(bool enabled);
+
 /// Up to `max` of the newest formatted log lines at `min_level` or above,
 /// oldest first (the last 500 are kept).
 std::vector<std::string> RecentLines(std::size_t max, Level min_level);
