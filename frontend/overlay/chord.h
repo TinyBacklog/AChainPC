@@ -15,7 +15,9 @@ public:
     /// True once, when this press completes the chord on `device`. It fires
     /// again only after every chord button on that device has been released.
     bool Press(int device, int button);
-    void Release(int device, int button);
+    /// True once, when this release lets go of the last chord button after
+    /// the chord fired: the moment to act for "on release" behaviour.
+    bool Release(int device, int button);
     /// Forgets a disconnected controller.
     void RemoveDevice(int device);
 

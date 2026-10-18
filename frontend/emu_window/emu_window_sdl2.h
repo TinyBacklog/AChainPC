@@ -3,12 +3,16 @@
 
 #pragma once
 
+#include <memory>
 #include <utility>
 
 #include "core/frontend/emu_window.h"
 #include "core/frontend/graphics_context.h"
 
 struct SDL_Window;
+union SDL_Event;
+class AcreOverlay;
+struct AcreIni;
 
 namespace Core {
 class System;
@@ -42,6 +46,9 @@ public:
     void OnFrameDisplayed() override;
 
     /// Wait for the next event on the main thread.
+    /// The in-game overlay, which sees every event before the game does.
+    void SetOverlay(std::shared_ptr<AcreOverlay> overlay_);
+
     void WaitEvent();
 
     // Sets the window icon from suyu.bmp
@@ -50,6 +57,7 @@ public:
 protected:
     /// Every 2 s: frame rate in the title bar (and the log, with --show-fps).
     void ReportPerformance();
+    void HandleEvent(const SDL_Event& event);
 
     /// Called by WaitEvent when a key is pressed or released.
     void OnKeyEvent(int key, u8 state);
@@ -107,6 +115,13 @@ protected:
 
     /// suyu core instance
     Core::System& system;
+
+    std::shared_ptr<AcreOverlay> overlay;
 };
 
 class DummyContext : public Core::Frontend::GraphicsContext {};
+
+/// The overlay for this window and session, configured from astralchain.ini.
+std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini, bool start_open,
+                                             EmuWindow_SDL2& window, Core::System& system,
+                                             InputCommon::InputSubsystem& input_subsystem);

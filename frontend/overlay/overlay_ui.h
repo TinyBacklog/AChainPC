@@ -8,6 +8,17 @@
 
 struct ImGuiContext;
 
+/// One input event for the overlay, in SDL terms (scancodes, gamepad buttons
+/// and axes), converted to ImGui on the thread that builds the frames.
+struct OverlayInput {
+    enum class Kind { Key, MouseMove, MouseButton, MouseWheel, PadButton, PadAxis };
+    Kind kind = Kind::Key;
+    int code = 0;      // scancode, mouse button, gamepad button or axis
+    bool down = false;
+    float x = 0;       // mouse position or wheel; axis value in -1..1
+    float y = 0;
+};
+
 /// Everything the overlay shows in a frame.
 struct OverlayModel {
     bool open = false;
@@ -23,6 +34,8 @@ public:
     OverlayUi& operator=(const OverlayUi&) = delete;
 
     void SetDisplaySize(float width, float height);
+    /// Applied to the next BuildFrame.
+    void QueueInput(const OverlayInput& input);
     /// Empty when the overlay is closed and the fps counter is off.
     VideoCore::OverlayDrawData BuildFrame(const OverlayModel& model);
     const VideoCore::OverlayFontAtlas& Font() const {

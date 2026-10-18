@@ -22,6 +22,7 @@ static constexpr Uint8 SDL_RELEASED = 0;
 #include "frontend/acre_ini_apply.h"
 #include "frontend/acre_tas.h"
 #include "frontend/emu_window/emu_window_sdl2.h"
+#include "frontend/overlay/overlay.h"
 #include "suyu_cmd/suyu_icon.h"
 
 #ifdef _WIN32
@@ -579,6 +580,13 @@ bool EmuWindow_SDL2::IsOpen() const {
 
 void EmuWindow_SDL2::OnFrameDisplayed() {
     AcreTasFrame();
+    if (overlay) {
+        overlay->OnFrameDisplayed();
+    }
+}
+
+void EmuWindow_SDL2::SetOverlay(std::shared_ptr<AcreOverlay> overlay_) {
+    overlay = std::move(overlay_);
 }
 
 bool EmuWindow_SDL2::IsShown() const {
@@ -678,7 +686,18 @@ void EmuWindow_SDL2::WaitEvent() {
         ReportPerformance();
         return;
     }
+    HandleEvent(event);
+    // With the overlay open, take everything queued so its navigation keeps up.
+    while (overlay && overlay->IsOpen() && SDL_PollEvent(&event)) {
+        HandleEvent(event);
+    }
+    ReportPerformance();
+}
 
+void EmuWindow_SDL2::HandleEvent(const SDL_Event& event) {
+    if (overlay && overlay->OnSdlEvent(event)) {
+        return;
+    }
     switch (event.type) {
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
     case SDL_EVENT_WINDOW_RESIZED:
@@ -738,8 +757,6 @@ void EmuWindow_SDL2::WaitEvent() {
     default:
         break;
     }
-
-    ReportPerformance();
 }
 
 void EmuWindow_SDL2::ReportPerformance() {
@@ -854,4 +871,57 @@ void EmuWindow_SDL2::SetWindowIcon() {
 
 void EmuWindow_SDL2::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) {
     SDL_SetWindowMinimumSize(render_window, minimal_size.first, minimal_size.second);
+}
+
+namespace {
+// The overlay's hold on the game's input: keyboard and mouse through
+// input_common, controllers through the HID core's configuration mode, in
+// which the game reads every controller as idle.
+class SdlGameInput final : public GameInput {
+public:
+    SdlGameInput(Core::System& system_, InputCommon::InputSubsystem& input_subsystem_)
+        : system{system_}, input_subsystem{input_subsystem_} {}
+
+    void ReleaseKey(int scancode) override {
+        input_subsystem.GetKeyboard()->ReleaseKey(static_cast<std::size_t>(scancode));
+    }
+    void ReleaseMouseButtons() override {
+        for (const auto button : {InputCommon::MouseButton::Left, InputCommon::MouseButton::Right,
+                                  InputCommon::MouseButton::Wheel, InputCommon::MouseButton::Backward,
+                                  InputCommon::MouseButton::Forward}) {
+            input_subsystem.GetMouse()->ReleaseButton(button);
+        }
+    }
+    void BlockControllers(bool blocked) override {
+        if (blocked) {
+            system.HIDCore().EnableAllControllerConfiguration();
+        } else {
+            system.HIDCore().DisableAllControllerConfiguration();
+        }
+    }
+
+private:
+    Core::System& system;
+    InputCommon::InputSubsystem& input_subsystem;
+};
+} // namespace
+
+std::shared_ptr<AcreOverlay> MakeAcreOverlay(const AcreIni& ini, bool start_open,
+                                             EmuWindow_SDL2& window, Core::System& system,
+                                             InputCommon::InputSubsystem& input_subsystem) {
+    (void)window;
+    OverlayConfig config;
+    config.key_scancode = SDL_GetScancodeFromName(ini.overlay_key.c_str());
+    if (config.key_scancode == SDL_SCANCODE_UNKNOWN) {
+        LOG_WARNING(Frontend, "astralchain.ini: [overlay] key: unknown key '{}'; using Insert",
+                    ini.overlay_key);
+        config.key_scancode = SDL_SCANCODE_INSERT;
+    }
+    if (!ParseChord(ini.overlay_pad, config.pad_chord)) {
+        ParseChord("l3+r3", config.pad_chord);
+    }
+    config.fps_counter = ini.fps_counter;
+    config.start_open = start_open;
+    return std::make_shared<AcreOverlay>(std::move(config),
+                                         std::make_unique<SdlGameInput>(system, input_subsystem));
 }

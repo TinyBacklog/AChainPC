@@ -53,7 +53,7 @@
 #include "frontend_common/content_manager.h"
 #include "frontend/acre_ini_apply.h"
 #include "frontend/acre_tas.h"
-#include "frontend/overlay/overlay_ui.h"
+#include "frontend/overlay/overlay.h"
 #include "input_common/main.h"
 #include "network/network.h"
 #include "sdl_config.h"
@@ -261,25 +261,6 @@ bool g_native_export_mode = false;
 // which leaves no way to read the frame rate. This puts it back on demand.
 bool g_show_fps = false;
 
-// --overlay-test (not in --help): the overlay panel and fps counter drawn on
-// every frame with no input, to check the renderer side on its own.
-class OverlayRendererTest final : public VideoCore::FrameOverlay {
-public:
-    const VideoCore::OverlayFontAtlas& Font() override {
-        return ui.Font();
-    }
-    VideoCore::OverlayDrawData Build(float width, float height) override {
-        ui.SetDisplaySize(width, height);
-        OverlayModel model;
-        model.open = true;
-        model.fps_counter = true;
-        model.fps = 60;
-        return ui.BuildFrame(model);
-    }
-
-private:
-    OverlayUi ui;
-};
 
 /// Set by the SIGINT handler below; polled by the --headless run loop, which
 /// has no window/event queue of its own to notice a Ctrl+C through.
@@ -423,7 +404,7 @@ int main(int argc, char** argv) {
 
     bool use_multiplayer = false;
     bool fullscreen = false;
-    bool overlay_test = false;
+    bool overlay_open = false;
     bool headless = false;
     bool recomp_strict = false;
     std::string recomp_report;
@@ -454,7 +435,7 @@ int main(int argc, char** argv) {
         {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
         {"show-fps", no_argument, 0, 'F'},
-        {"overlay-test", no_argument, 0, 'O'},
+        {"overlay-open", no_argument, 0, 'O'},
         {"exit-after", required_argument, 0, 'E'},
         {"tas-play", no_argument, 0, 'P'},
         {"tas-record", no_argument, 0, 'W'},
@@ -489,7 +470,7 @@ int main(int argc, char** argv) {
                 g_show_fps = true;
                 break;
             case 'O':
-                overlay_test = true;
+                overlay_open = true;
                 break;
             case 'U': break; // Applied before logging/config initialization.
             case 'S': recomp_strict = true; break;
@@ -610,15 +591,14 @@ int main(int argc, char** argv) {
     SdlConfig config{config_path};
     apply_user_root(); // Explicit profiles override absolute paths saved in imported configs.
 
-    if (const auto found = FindAcreIni(ini_path, std::filesystem::path(argv[0]).parent_path())) {
-        const AcreIni acre_ini = LoadAcreIni(*found);
-        ApplyAcreIni(acre_ini);
-        fullscreen = fullscreen || acre_ini.fullscreen;
-        LOG_INFO(Frontend, "Settings from {}", found->string());
-    } else {
-        // The ini is authoritative: without one, its defaults apply, so deleting
-        // the file really does bring the defaults back.
-        ApplyAcreIni(AcreIni{});
+    // The ini is authoritative: without one, its defaults apply, so deleting
+    // the file really does bring the defaults back.
+    const auto acre_ini_found = FindAcreIni(ini_path, std::filesystem::path(argv[0]).parent_path());
+    const AcreIni acre_ini = acre_ini_found ? LoadAcreIni(*acre_ini_found) : AcreIni{};
+    ApplyAcreIni(acre_ini);
+    fullscreen = fullscreen || acre_ini.fullscreen;
+    if (acre_ini_found) {
+        LOG_INFO(Frontend, "Settings from {}", acre_ini_found->string());
     }
     // Before the window: it starts the input subsystem, which reads the TAS settings.
     AcreTasConfigure(tas_mode);
@@ -1087,8 +1067,10 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, HeadlessSignalHandler);
     std::signal(SIGTERM, HeadlessSignalHandler);
     termination = "running";
-    if (overlay_test) {
-        system.Renderer().SetFrameOverlay(std::make_shared<OverlayRendererTest>());
+    if (sdl_window && !headless) {
+        auto overlay = MakeAcreOverlay(acre_ini, overlay_open, *sdl_window, system, input_subsystem);
+        sdl_window->SetOverlay(overlay);
+        system.Renderer().SetFrameOverlay(std::move(overlay));
     }
     void(system.Run());
     // Service initialization may require the scheduler to run. Synchronize

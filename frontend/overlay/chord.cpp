@@ -16,11 +16,13 @@ bool Chord::Press(int device, int button) {
     return true;
 }
 
-void Chord::Release(int device, int button) {
+bool Chord::Release(int device, int button) {
     const auto it = devices.find(device);
-    if (it == devices.end()) return;
-    it->second.held.erase(button);
-    if (it->second.held.empty()) it->second.fired = false;
+    if (it == devices.end()) return false;
+    if (it->second.held.erase(button) == 0 || !it->second.held.empty()) return false;
+    const bool released = it->second.fired;
+    it->second.fired = false;
+    return released;
 }
 
 void Chord::RemoveDevice(int device) {

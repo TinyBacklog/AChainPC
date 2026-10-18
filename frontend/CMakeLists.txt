@@ -24,6 +24,8 @@ if (SUYU_CMD OR YUZU_CMD)
         overlay/chord.h
         overlay/frame_stats.cpp
         overlay/frame_stats.h
+        overlay/overlay.cpp
+        overlay/overlay.h
         overlay/overlay_ui.cpp
         overlay/overlay_ui.h
         overlay/thread_cpu.cpp

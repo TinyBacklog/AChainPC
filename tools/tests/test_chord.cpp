@@ -17,10 +17,11 @@ int main() {
         CHECK(!chord.Press(1, L3));
         CHECK(chord.Press(1, R3));        // both down: fires
         CHECK(!chord.Press(1, R3));       // repeat while held: no
-        chord.Release(1, R3);
+        CHECK(!chord.Release(1, R3));     // L3 still held: chord not released yet
         CHECK(!chord.Press(1, R3));       // L3 never released: not re-armed
-        chord.Release(1, L3);
-        chord.Release(1, R3);
+        CHECK(!chord.Release(1, L3));
+        CHECK(chord.Release(1, R3));      // last button up after firing: released
+        CHECK(!chord.Release(1, R3));     // only once
         CHECK(!chord.Press(1, R3));       // re-armed, order does not matter
         CHECK(chord.Press(1, L3));
     }

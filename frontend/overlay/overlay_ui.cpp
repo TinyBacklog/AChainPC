@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <imgui.h>
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_scancode.h>
 #include "frontend/overlay/overlay_ui.h"
 
 namespace {
@@ -82,6 +85,101 @@ OverlayUi::OverlayUi() {
 
 OverlayUi::~OverlayUi() {
     ImGui::DestroyContext(context);
+}
+
+namespace {
+ImGuiKey KeyFromScancode(int scancode) {
+    switch (scancode) {
+    case SDL_SCANCODE_UP: return ImGuiKey_UpArrow;
+    case SDL_SCANCODE_DOWN: return ImGuiKey_DownArrow;
+    case SDL_SCANCODE_LEFT: return ImGuiKey_LeftArrow;
+    case SDL_SCANCODE_RIGHT: return ImGuiKey_RightArrow;
+    case SDL_SCANCODE_RETURN: return ImGuiKey_Enter;
+    case SDL_SCANCODE_KP_ENTER: return ImGuiKey_KeypadEnter;
+    case SDL_SCANCODE_ESCAPE: return ImGuiKey_Escape;
+    case SDL_SCANCODE_TAB: return ImGuiKey_Tab;
+    case SDL_SCANCODE_SPACE: return ImGuiKey_Space;
+    case SDL_SCANCODE_BACKSPACE: return ImGuiKey_Backspace;
+    case SDL_SCANCODE_PAGEUP: return ImGuiKey_PageUp;
+    case SDL_SCANCODE_PAGEDOWN: return ImGuiKey_PageDown;
+    case SDL_SCANCODE_HOME: return ImGuiKey_Home;
+    case SDL_SCANCODE_END: return ImGuiKey_End;
+    case SDL_SCANCODE_LCTRL: return ImGuiKey_LeftCtrl;
+    case SDL_SCANCODE_RCTRL: return ImGuiKey_RightCtrl;
+    case SDL_SCANCODE_LSHIFT: return ImGuiKey_LeftShift;
+    case SDL_SCANCODE_RSHIFT: return ImGuiKey_RightShift;
+    default: return ImGuiKey_None;
+    }
+}
+
+ImGuiKey KeyFromPadButton(int button) {
+    switch (button) {
+    case SDL_GAMEPAD_BUTTON_SOUTH: return ImGuiKey_GamepadFaceDown;
+    case SDL_GAMEPAD_BUTTON_EAST: return ImGuiKey_GamepadFaceRight;
+    case SDL_GAMEPAD_BUTTON_WEST: return ImGuiKey_GamepadFaceLeft;
+    case SDL_GAMEPAD_BUTTON_NORTH: return ImGuiKey_GamepadFaceUp;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return ImGuiKey_GamepadDpadUp;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return ImGuiKey_GamepadDpadDown;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return ImGuiKey_GamepadDpadLeft;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return ImGuiKey_GamepadDpadRight;
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return ImGuiKey_GamepadL1;
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return ImGuiKey_GamepadR1;
+    case SDL_GAMEPAD_BUTTON_START: return ImGuiKey_GamepadStart;
+    case SDL_GAMEPAD_BUTTON_BACK: return ImGuiKey_GamepadBack;
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK: return ImGuiKey_GamepadL3;
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return ImGuiKey_GamepadR3;
+    default: return ImGuiKey_None;
+    }
+}
+
+void AddStick(ImGuiIO& io, ImGuiKey negative, ImGuiKey positive, float value) {
+    constexpr float kDeadZone = 0.25f;
+    const auto scaled = [&](float v) { return v < kDeadZone ? 0.0f : (v - kDeadZone) / (1 - kDeadZone); };
+    io.AddKeyAnalogEvent(negative, value < -kDeadZone, scaled(-value));
+    io.AddKeyAnalogEvent(positive, value > kDeadZone, scaled(value));
+}
+} // namespace
+
+void OverlayUi::QueueInput(const OverlayInput& input) {
+    ImGui::SetCurrentContext(context);
+    ImGuiIO& io = ImGui::GetIO();
+    switch (input.kind) {
+    case OverlayInput::Kind::Key:
+        if (const ImGuiKey key = KeyFromScancode(input.code); key != ImGuiKey_None) {
+            io.AddKeyEvent(key, input.down);
+        }
+        break;
+    case OverlayInput::Kind::MouseMove:
+        io.AddMousePosEvent(input.x, input.y);
+        break;
+    case OverlayInput::Kind::MouseButton:
+        io.AddMousePosEvent(input.x, input.y);
+        if (input.code >= SDL_BUTTON_LEFT && input.code <= SDL_BUTTON_MIDDLE) {
+            // SDL: 1 left, 2 middle, 3 right; ImGui: 0 left, 1 right, 2 middle.
+            const int button = input.code == SDL_BUTTON_LEFT ? 0 : input.code == SDL_BUTTON_RIGHT ? 1 : 2;
+            io.AddMouseButtonEvent(button, input.down);
+        }
+        break;
+    case OverlayInput::Kind::MouseWheel:
+        io.AddMouseWheelEvent(input.x, input.y);
+        break;
+    case OverlayInput::Kind::PadButton:
+        if (const ImGuiKey key = KeyFromPadButton(input.code); key != ImGuiKey_None) {
+            io.AddKeyEvent(key, input.down);
+        }
+        break;
+    case OverlayInput::Kind::PadAxis:
+        switch (input.code) {
+        case SDL_GAMEPAD_AXIS_LEFTX: AddStick(io, ImGuiKey_GamepadLStickLeft, ImGuiKey_GamepadLStickRight, input.x); break;
+        case SDL_GAMEPAD_AXIS_LEFTY: AddStick(io, ImGuiKey_GamepadLStickUp, ImGuiKey_GamepadLStickDown, input.x); break;
+        case SDL_GAMEPAD_AXIS_RIGHTX: AddStick(io, ImGuiKey_GamepadRStickLeft, ImGuiKey_GamepadRStickRight, input.x); break;
+        case SDL_GAMEPAD_AXIS_RIGHTY: AddStick(io, ImGuiKey_GamepadRStickUp, ImGuiKey_GamepadRStickDown, input.x); break;
+        case SDL_GAMEPAD_AXIS_LEFT_TRIGGER: io.AddKeyAnalogEvent(ImGuiKey_GamepadL2, input.x > 0.5f, input.x); break;
+        case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER: io.AddKeyAnalogEvent(ImGuiKey_GamepadR2, input.x > 0.5f, input.x); break;
+        default: break;
+        }
+        break;
+    }
 }
 
 void OverlayUi::SetDisplaySize(float width_, float height_) {

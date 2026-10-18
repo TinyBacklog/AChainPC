@@ -129,3 +129,9 @@ target_include_directories(test_recomp_snapshot PRIVATE ${PROJECT_SOURCE_DIR}/ru
 target_compile_features(test_recomp_snapshot PRIVATE cxx_std_20)
 add_test(NAME runtime_recomp_snapshot COMMAND test_recomp_snapshot)
 set_tests_properties(runtime_recomp_snapshot PROPERTIES LABELS lifter)
+
+add_executable(test_overlay_input test_overlay_input.cpp)
+target_link_libraries(test_overlay_input PRIVATE acre_overlay)
+target_compile_features(test_overlay_input PRIVATE cxx_std_20)
+add_test(NAME frontend_overlay_input COMMAND test_overlay_input)
+set_tests_properties(frontend_overlay_input PROPERTIES LABELS frontend)
