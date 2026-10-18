@@ -72,6 +72,30 @@ def fps_window(samples: list[tuple[float, float]], start: float, end: float) -> 
     return FpsWindow(statistics.fmean(values), min(values), max(values), len(values), at_target)
 
 
+# A frame shown for longer than two 60 Hz frames counts as a stall.
+STALL_MS = 1000 / 30
+
+
+@dataclass
+class FramePacing:
+    frames: int
+    low_1pct: float  # fps over the slowest 1% of frames
+    worst_ms: float
+    stalls: int  # frames longer than STALL_MS
+
+
+def frame_pacing(times_ns: list[int], start: float, end: float) -> FramePacing | None:
+    """Pacing of the frames presented in [start, end) seconds after the script
+    ended, from the frontend's frametimes.txt (one timestamp per frame)."""
+    inside = [t for t in times_ns if start * 1e9 <= t < end * 1e9]
+    deltas = [(b - a) / 1e6 for a, b in zip(inside, inside[1:])]
+    if not deltas:
+        return None
+    slowest = sorted(deltas, reverse=True)[:max(1, len(deltas) // 100)]
+    return FramePacing(len(deltas), 1000 / statistics.fmean(slowest), max(deltas),
+                       sum(1 for d in deltas if d > STALL_MS))
+
+
 def parse_perf(text: str) -> dict[str, float]:
     """Counter values from `perf stat -x,` output (CSV: value,unit,event,...)."""
     counters = {}
@@ -93,6 +117,7 @@ class RunResult:
     perf: dict[str, float] = field(default_factory=dict)
     log: str = ""
     hung: bool = False
+    pacing: FramePacing | None = None
 
 
 class Hung(Exception):
@@ -164,9 +189,15 @@ def run_one(binary: Path, index: int, snapshot: Path, script: Path, ini: Path, r
     shot = profile / "tas" / "finish.png"
     if shot.is_file():
         shutil.copyfile(shot, out_dir / name / "finish.png")
+    pacing = None
+    frame_times = profile / "tas" / "frametimes.txt"
+    if frame_times.is_file():
+        shutil.copyfile(frame_times, out_dir / name / "frametimes.txt")
+        times = [int(line) for line in frame_times.read_text().split() if line.isdigit()]
+        pacing = frame_pacing(times, settle, settle + seconds)
     samples = fps_samples(log.read_text(errors="replace"))
     window = fps_window(samples, finished + settle, finished + settle + seconds)
-    return RunResult(str(binary), index, window, parse_perf(perf_text), str(log))
+    return RunResult(str(binary), index, window, parse_perf(perf_text), str(log), pacing=pacing)
 
 
 def summarize(results: list[RunResult]) -> list[str]:
@@ -181,6 +212,11 @@ def summarize(results: list[RunResult]) -> list[str]:
         line = (f"{binary}: fps mean {statistics.fmean(means):.1f} over {len(runs)} runs "
                 f"(runs {', '.join(f'{m:.1f}' for m in means)}; low {min(r.fps.low for r in runs):.1f}; "
                 f"at 60: {statistics.fmean(r.fps.at_target for r in runs):.0%})")
+        paced = [r.pacing for r in runs if r.pacing]
+        if paced:
+            line += (f"; 1% low {statistics.fmean(p.low_1pct for p in paced):.1f}, "
+                     f"stalls {statistics.fmean(p.stalls for p in paced):.1f}/run, "
+                     f"worst {max(p.worst_ms for p in paced):.0f} ms")
         perf = [r.perf for r in runs if "cycles" in r.perf and "instructions" in r.perf]
         if perf:
             cycles = statistics.fmean(p["cycles"] for p in perf)

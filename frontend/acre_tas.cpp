@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -26,6 +28,10 @@ AcreTasMode g_mode = AcreTasMode::Off;
 Core::System* g_system = nullptr;
 std::atomic<InputCommon::TasInput::Tas*> g_tas{nullptr};
 bool g_finish_announced = false; // only touched by the presenting thread
+// After the script ends, one line per presented frame: nanoseconds since the
+// script ended. Benchmarks read frame pacing from it (1% lows, stalls).
+std::FILE* g_frame_times = nullptr;
+std::chrono::steady_clock::time_point g_finish_time;
 
 InputCommon::TasInput::TasAnalog Axis(const Core::HID::AnalogStickState& stick) {
     return {static_cast<float>(stick.x) / 32767.0f, static_cast<float>(stick.y) / 32767.0f};
@@ -118,7 +124,18 @@ void AcreTasFrame() {
             LOG_INFO(Frontend, "tas: script finished");
             g_finish_announced = true;
             ScreenshotFinish();
+            g_finish_time = std::chrono::steady_clock::now();
+            g_frame_times = std::fopen((TasDir() + "/frametimes.txt").c_str(), "w");
         }
+    }
+    if (g_frame_times) {
+        const auto since = std::chrono::steady_clock::now() - g_finish_time;
+        std::fprintf(g_frame_times, "%lld\n",
+                     static_cast<long long>(
+                         std::chrono::duration_cast<std::chrono::nanoseconds>(since).count()));
+        // A benchmark ends the frontend with a signal, so nothing is left buffered
+        // for long.
+        std::fflush(g_frame_times);
     }
 }
 

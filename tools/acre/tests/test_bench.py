@@ -42,6 +42,23 @@ class BenchTest(unittest.TestCase):
         samples = [(0.0, 60.0), (2.0, 59.6), (4.0, 59.4), (6.0, 30.0)]
         self.assertEqual(bench.fps_window(samples, 0, 8).at_target, 0.5)
 
+    def test_pacing_over_window(self):
+        # 100 frames 16.7 ms apart, then one 50 ms stall, inside [1 s, 3 s).
+        times = [int(1e9 + i * 16_666_667) for i in range(101)]
+        times.append(times[-1] + 50_000_000)
+        pacing = bench.frame_pacing(times, 1.0, 3.0)
+        self.assertEqual(pacing.frames, 101)
+        self.assertEqual(pacing.stalls, 1)
+        self.assertAlmostEqual(pacing.worst_ms, 50.0, places=1)
+        self.assertAlmostEqual(pacing.low_1pct, 20.0, places=1)  # the worst 1% is the 50 ms frame
+
+    def test_pacing_ignores_frames_outside_window(self):
+        times = [0, 500_000_000, int(1.0e9), int(1.0167e9), int(1.0334e9), int(5e9)]
+        pacing = bench.frame_pacing(times, 1.0, 3.0)
+        self.assertEqual(pacing.frames, 2)
+        self.assertEqual(pacing.stalls, 0)
+        self.assertIsNone(bench.frame_pacing(times, 10.0, 12.0))
+
     def test_parse_perf_skips_unsupported(self):
         counters = bench.parse_perf(PERF)
         self.assertEqual(counters["cycles"], 119723828873)
@@ -58,6 +75,16 @@ class BenchTest(unittest.TestCase):
         self.assertIn("IPC 2.50", lines[0])
         self.assertIn("at 60: 25%", lines[0])
         self.assertEqual(lines[1], "b: no measurement")
+
+    def test_summary_reports_pacing(self):
+        pacing = bench.FramePacing(frames=100, low_1pct=40.0, worst_ms=50.0, stalls=2)
+        results = [bench.RunResult("a", 0, bench.FpsWindow(46.0, 44.0, 48.0, 2, 0.0), pacing=pacing),
+                   bench.RunResult("a", 1, bench.FpsWindow(42.0, 40.0, 44.0, 2, 0.0),
+                                   pacing=bench.FramePacing(100, 30.0, 70.0, 4))]
+        line = bench.summarize(results)[0]
+        self.assertIn("1% low 35.0", line)
+        self.assertIn("stalls 3.0/run", line)
+        self.assertIn("worst 70 ms", line)
 
     def test_summary_counts_hung_runs(self):
         results = [bench.RunResult("a", 0, bench.FpsWindow(46.0, 44.0, 48.0, 2, 0.0)),
