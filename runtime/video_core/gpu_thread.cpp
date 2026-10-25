@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/frame_trace.h"
 #include "common/assert.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
@@ -35,7 +36,13 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
         auto current_context = context.Acquire();
         CommandDataContainer next;
         while (!stop_token.stop_requested()) {
-            state.queue.PopWait(next, stop_token);
+            if (Common::FrameTrace::Enabled()) {
+                const s64 idle_start = Common::FrameTrace::NowNs();
+                state.queue.PopWait(next, stop_token);
+                Common::FrameTrace::AddGpuIdle(Common::FrameTrace::NowNs() - idle_start);
+            } else {
+                state.queue.PopWait(next, stop_token);
+            }
             if (stop_token.stop_requested()) {
                 break;
             }

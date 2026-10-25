@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/frame_trace.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/core_timing.h"
@@ -27,6 +28,7 @@ Conductor::Conductor(Core::System& system, Container& container, DisplayList& di
             "ScreenComposition",
             [this](s64 time,
                    std::chrono::nanoseconds ns_late) -> std::optional<std::chrono::nanoseconds> {
+                Common::FrameTrace::Record(Common::FrameTrace::Event::Tick);
                 m_signal.Set();
                 return std::chrono::nanoseconds(this->GetNextTicks());
             });
@@ -69,8 +71,11 @@ void Conductor::UnlinkVsyncEvent(u64 display_id, Event* event) {
 
 void Conductor::ProcessVsync() {
     for (auto& [display_id, manager] : m_vsync_managers) {
+        Common::FrameTrace::Record(Common::FrameTrace::Event::ComposeBegin);
         m_container.ComposeOnDisplay(&m_swap_interval, &m_compose_speed_scale, display_id);
+        Common::FrameTrace::Record(Common::FrameTrace::Event::ComposeEnd);
         manager.SignalVsync(m_system.Kernel());
+        Common::FrameTrace::Record(Common::FrameTrace::Event::VsyncSignal);
     }
 }
 

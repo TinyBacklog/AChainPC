@@ -7,6 +7,7 @@
 // Parts of this implementation were based on:
 // https://cs.android.com/android/platform/superproject/+/android-5.1.1_r38:frameworks/native/libs/gui/BufferQueueProducer.cpp
 
+#include "common/frame_trace.h"
 #include "common/assert.h"
 #include "common/logging.h"
 #include "common/settings.h"
@@ -251,7 +252,9 @@ Status BufferQueueProducer::DequeueBuffer(s32* out_slot, Fence* out_fence, bool 
         usage |= core->consumer_usage_bit;
 
         s32 found{};
+        Common::FrameTrace::Record(Common::FrameTrace::Event::DequeueBegin);
         Status status = WaitForFreeSlotThenRelock(async, &found, &return_flags, lock);
+        Common::FrameTrace::Record(Common::FrameTrace::Event::DequeueEnd);
         if (status != Status::NoError) {
             return status;
         }
@@ -444,6 +447,7 @@ Status BufferQueueProducer::QueueBuffer(s32 slot, const QueueBufferInput& input,
     Fence fence{};
 
     input.Deflate(&timestamp, &is_auto_timestamp, &crop, &scaling_mode, &transform, &sticky_transform_, &async, &swap_interval, &fence);
+    Common::FrameTrace::Record(Common::FrameTrace::Event::Queue, swap_interval);
 
     switch (scaling_mode) {
     case NativeWindowScalingMode::Freeze:

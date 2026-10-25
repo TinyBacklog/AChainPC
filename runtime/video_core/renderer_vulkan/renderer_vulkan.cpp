@@ -14,6 +14,7 @@
 
 #include <fmt/ranges.h>
 
+#include "common/frame_trace.h"
 #include "common/logging.h"
 #include <ranges>
 #include "common/scope_exit.h"
@@ -217,7 +218,9 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
     }
 
     RenderScreenshot(framebuffers);
+    Common::FrameTrace::Record(Common::FrameTrace::Event::RenderBegin);
     Frame* frame = present_manager.GetRenderFrame();
+    Common::FrameTrace::Record(Common::FrameTrace::Event::RenderFrame);
 
     scheduler.RequestOutsideRenderPassOperationContext();
     blit_swapchain.DrawToFrame(device, rasterizer, frame, framebuffers,
@@ -227,6 +230,7 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
     scheduler.Flush(*frame->render_ready);
 
     present_manager.Present(frame);
+    Common::FrameTrace::Record(Common::FrameTrace::Event::RenderEnd);
 
     gpu.RendererFrameEndNotify();
     rasterizer.TickFrame();

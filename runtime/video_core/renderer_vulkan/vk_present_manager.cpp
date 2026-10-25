@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/frame_trace.h"
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/frontend/emu_window.h"
@@ -280,7 +281,9 @@ void PresentManager::PresentThread(std::stop_token token) {
             // before the queue lock goes out of scope. This way the swapchain
             // lock in WaitPresent is guaranteed to occur after here.
             std::exchange(lock, std::unique_lock{swapchain_mutex});
+            Common::FrameTrace::Record(Common::FrameTrace::Event::PresentBegin);
             CopyToSwapchain(frame);
+            Common::FrameTrace::Record(Common::FrameTrace::Event::PresentEnd);
 
             // Free the frame for reuse
             std::scoped_lock fl{free_mutex};

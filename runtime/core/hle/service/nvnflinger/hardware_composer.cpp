@@ -8,6 +8,7 @@
 
 #include <boost/container/small_vector.hpp>
 
+#include "common/frame_trace.h"
 #include "core/hle/service/nvdrv/devices/nvdisp_disp0.h"
 #include "core/hle/service/nvnflinger/buffer_item.h"
 #include "core/hle/service/nvnflinger/buffer_item_consumer.h"
@@ -105,6 +106,7 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, Display& display,
 
         // If we acquired a new buffer, we need to present.
         if (result == CacheStatus::BufferAcquired) {
+            Common::FrameTrace::Record(Common::FrameTrace::Event::Acquire);
             has_acquired_buffer = true;
         }
 

@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/frame_trace.h"
 #include "common/logging/log.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
@@ -231,8 +232,13 @@ void PhysicalCore::LogBacktrace(KernelCore& kernel) {
 }
 
 void PhysicalCore::Idle() {
-    std::unique_lock lk{m_guard};
-    m_on_interrupt.wait(lk, [this] { return m_is_interrupted; });
+    const bool trace = Common::FrameTrace::Enabled();
+    const s64 start = trace ? Common::FrameTrace::NowNs() : 0;
+    {
+        std::unique_lock lk{m_guard};
+        m_on_interrupt.wait(lk, [this] { return m_is_interrupted; });
+    }
+    if (trace) Common::FrameTrace::AddCoreIdle(m_core_index, Common::FrameTrace::NowNs() - start);
 }
 
 bool PhysicalCore::IsInterrupted() const {
