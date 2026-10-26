@@ -27,12 +27,12 @@ def fresh_profile(profile: Path) -> None:
 
 
 def check_game_dir(game_dir: Path) -> None:
-    """The folder `extract` writes: exefs/{main,main.npdm,rtld,sdk} plus a non-empty romfs/."""
+    """The folder `extract` writes: exefs/{main,main.npdm,rtld,sdk} plus a romfs/ with at least one file."""
     for part in ("main", "main.npdm", "rtld", "sdk"):
         if not (game_dir / "exefs" / part).is_file():
             config.fail(config.EXIT_NO_GAME_FILE, f"exefs/{part} not found in {game_dir}")
     romfs = game_dir / "romfs"
-    if not romfs.is_dir() or not any(romfs.iterdir()):
+    if not romfs.is_dir() or not any(p.is_file() for p in romfs.rglob("*")):
         config.fail(config.EXIT_NO_GAME_FILE, f"romfs/ missing or empty in {game_dir}")
 
 

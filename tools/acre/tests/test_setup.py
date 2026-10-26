@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import tempfile
 import unittest
@@ -44,6 +45,32 @@ class SetupTest(unittest.TestCase):
         setup.fresh_profile(w / "profile")
         self.assertTrue((w / "profile").is_dir())
         self.assertFalse(stale.exists())
+
+
+def load_cli():
+    """tools/acre.py; the acre package shadows it in a plain import."""
+    path = Path(__file__).resolve().parents[2] / "acre.py"
+    spec = importlib.util.spec_from_file_location("acre_cli", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class SetupCliTest(unittest.TestCase):
+    def run_cli(self, *argv):
+        cli = load_cli()
+        with mock.patch("acre.setup.run") as run, mock.patch("acre.setup.run_game_dir") as run_dir, \
+                mock.patch("sys.stderr"), self.assertRaises(SystemExit) as e:
+            cli.main(["setup", *argv])
+        run.assert_not_called()
+        run_dir.assert_not_called()
+        return e.exception.code
+
+    def test_update_with_game_dir_is_rejected(self):
+        self.assertEqual(self.run_cli("--game-dir", "g", "--update", "u.nsp"), 2)
+
+    def test_base_and_game_dir_are_mutually_exclusive(self):
+        self.assertEqual(self.run_cli("--base", "b.nsp", "--game-dir", "g"), 2)
 
 
 PARTS = ["exefs/main", "exefs/main.npdm", "exefs/rtld", "exefs/sdk", "romfs"]
@@ -115,6 +142,20 @@ class GameDirTest(unittest.TestCase):
         with self.assertRaises(SystemExit) as e:
             setup.check_game_dir(self.game)
         self.assertEqual(e.exception.code, config.EXIT_NO_GAME_FILE)
+
+    def test_game_dir_romfs_with_only_empty_folders_counts_as_missing(self):
+        (self.game / "romfs" / "x").unlink()
+        (self.game / "romfs" / "empty" / "deeper").mkdir(parents=True)
+        with self.assertRaises(SystemExit) as e:
+            setup.check_game_dir(self.game)
+        self.assertEqual(e.exception.code, config.EXIT_NO_GAME_FILE)
+
+    def test_game_dir_romfs_with_a_nested_file_passes(self):
+        (self.game / "romfs" / "x").unlink()
+        nested = self.game / "romfs" / "a" / "b"
+        nested.mkdir(parents=True)
+        (nested / "f").write_text("r")
+        setup.check_game_dir(self.game)
 
     def test_complete_game_dir_passes(self):
         setup.check_game_dir(self.game)

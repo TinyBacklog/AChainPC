@@ -176,7 +176,8 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
 
         dir = file->GetContainingDirectory();
     }
-    // PatchExeFS may replace dir with a parentless overlay, so keep the real one for the romfs.
+    // PatchExeFS may return an update or mod layer whose parent is not the game folder, so keep
+    // the real directory for the romfs lookup.
     const FileSys::VirtualDir original_dir = dir;
 
     // Read meta to determine title ID
