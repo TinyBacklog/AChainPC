@@ -63,6 +63,8 @@ if (SUYU_CMD OR YUZU_CMD)
         acre_ini_apply.h
         acre_tas.cpp
         acre_tas.h
+        game_folder.cpp
+        game_folder.h
         sdl_config.cpp
         sdl_config.h
         suyu.cpp
