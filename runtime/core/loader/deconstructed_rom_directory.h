@@ -18,6 +18,14 @@ class System;
 namespace Loader {
 
 /**
+ * Finds the RomFS that belongs to an ExeFS directory. In order: a romfs.bin file in the ExeFS, a
+ * romfs file in the ExeFS, a romfs/ folder next to the ExeFS (mounted with CreateRomFS).
+ *
+ * @return The RomFS, or nullptr if none exists or the romfs/ folder is empty.
+ */
+FileSys::VirtualFile FindDirectoryRomFS(const FileSys::VirtualDir& exefs);
+
+/**
  * This class loads a "deconstructed ROM directory", which are the typical format we see for Switch
  * game dumps. The path should be a "main" NSO, which must be in a directory that contains the other
  * standard ExeFS NSOs (e.g. rtld, sdk, etc.). It will automatically find and load these.

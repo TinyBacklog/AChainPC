@@ -132,7 +132,7 @@ set_tests_properties(runtime_recomp_snapshot PROPERTIES LABELS lifter)
 
 # Copying a VFS directory to disk for the game folder.
 add_executable(test_game_folder test_game_folder.cpp ${PROJECT_SOURCE_DIR}/frontend/game_folder.cpp)
-target_link_libraries(test_game_folder PRIVATE core)
+target_link_libraries(test_game_folder PRIVATE core frontend_common)
 target_include_directories(test_game_folder PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/runtime)
 target_compile_features(test_game_folder PRIVATE cxx_std_20)
 add_test(NAME frontend_game_folder COMMAND test_game_folder)

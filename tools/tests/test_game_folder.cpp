@@ -5,9 +5,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <vector>
+#include "core/file_sys/romfs.h"
 #include "core/file_sys/vfs/vfs_vector.h"
+#include "core/loader/deconstructed_rom_directory.h"
 #include "frontend/game_folder.h"
 
 namespace fs = std::filesystem;
@@ -32,6 +35,33 @@ static FileSys::VirtualDir MakeTree() {
         std::vector<FileSys::VirtualFile>{}, std::vector<FileSys::VirtualDir>{data}, "romfs");
     return std::make_shared<VectorVfsDirectory>(
         std::vector<FileSys::VirtualFile>{}, std::vector<FileSys::VirtualDir>{exefs, romfs}, "");
+}
+
+// root/{exefs/main[, exefs/romfs.bin], romfs/[data/a.bin]} with the parents wired, as a real folder
+// would have them. Returns exefs; root stays alive through its parent link.
+static std::shared_ptr<FileSys::VectorVfsDirectory> MakeGame(bool romfs_bin, bool romfs_dir,
+                                                             bool romfs_empty) {
+    using FileSys::VectorVfsDirectory;
+    auto root = std::make_shared<VectorVfsDirectory>();
+    auto exefs = std::make_shared<VectorVfsDirectory>(
+        std::vector<FileSys::VirtualFile>{MakeFile("main", {1})}, std::vector<FileSys::VirtualDir>{},
+        "exefs", root);
+    if (romfs_bin) {
+        exefs->AddFile(MakeFile("romfs.bin", {9}));
+    }
+    root->AddDirectory(exefs);
+    if (romfs_dir) {
+        auto romfs = std::make_shared<VectorVfsDirectory>(
+            std::vector<FileSys::VirtualFile>{}, std::vector<FileSys::VirtualDir>{}, "romfs", root);
+        if (!romfs_empty) {
+            auto data = std::make_shared<VectorVfsDirectory>(
+                std::vector<FileSys::VirtualFile>{MakeFile("a.bin", {5, 6})},
+                std::vector<FileSys::VirtualDir>{}, "data", romfs);
+            romfs->AddDirectory(data);
+        }
+        root->AddDirectory(romfs);
+    }
+    return exefs;
 }
 
 static std::vector<u8> ReadAll(const fs::path& path) {
@@ -93,6 +123,25 @@ int main() {
         CHECK(Has(root / "game/exefs/main", {1, 2, 3}));
         CHECK(!HasTmp(root));
         fs::remove_all(root);
+    }
+    {   // sibling_dir_romfs
+        const auto exefs = MakeGame(false, true, false);
+        const auto result = Loader::FindDirectoryRomFS(exefs);
+        CHECK(result != nullptr);
+        const auto extracted = FileSys::ExtractRomFS(result);
+        CHECK(extracted != nullptr);
+        const auto data = extracted ? extracted->GetSubdirectory("data") : nullptr;
+        const auto a = data ? data->GetFile("a.bin") : nullptr;
+        CHECK(a != nullptr);
+        CHECK(a && a->ReadAllBytes() == std::vector<u8>({5, 6}));
+    }
+    {   // file_beats_sibling_dir
+        const auto exefs = MakeGame(true, true, false);
+        CHECK(Loader::FindDirectoryRomFS(exefs) == exefs->GetFile("romfs.bin"));
+    }
+    {   // no_romfs
+        CHECK(Loader::FindDirectoryRomFS(MakeGame(false, false, false)) == nullptr);
+        CHECK(Loader::FindDirectoryRomFS(MakeGame(false, true, true)) == nullptr);
     }
     return failures != 0;
 }

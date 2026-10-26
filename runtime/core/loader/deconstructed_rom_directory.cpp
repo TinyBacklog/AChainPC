@@ -12,6 +12,7 @@
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/control_metadata.h"
 #include "core/file_sys/patch_manager.h"
+#include "core/file_sys/romfs.h"
 #include "core/file_sys/romfs_factory.h"
 #include "core/hle/kernel/k_page_table.h"
 #include "core/hle/kernel/k_process.h"
@@ -70,6 +71,27 @@ struct PatchCollection {
     std::vector<Core::NCE::Patcher> patchers;
     std::array<s32, 13> module_patcher_indices{};
 };
+
+FileSys::VirtualFile FindDirectoryRomFS(const FileSys::VirtualDir& exefs) {
+    if (!exefs) {
+        return nullptr;
+    }
+    if (auto file = exefs->GetFile("romfs.bin")) {
+        LOG_INFO(Loader, "RomFS from file romfs.bin in the ExeFS directory");
+        return file;
+    }
+    if (auto file = exefs->GetFile("romfs")) {
+        LOG_INFO(Loader, "RomFS from file romfs in the ExeFS directory");
+        return file;
+    }
+    const auto parent = exefs->GetParentDirectory();
+    const auto romfs_dir = parent ? parent->GetSubdirectory("romfs") : nullptr;
+    if (romfs_dir && (!romfs_dir->GetFiles().empty() || !romfs_dir->GetSubdirectories().empty())) {
+        LOG_INFO(Loader, "RomFS from the romfs folder next to the ExeFS directory");
+        return FileSys::CreateRomFS(romfs_dir);
+    }
+    return nullptr;
+}
 
 AppLoader_DeconstructedRomDirectory::AppLoader_DeconstructedRomDirectory(FileSys::VirtualFile file_, bool override_update_, bool register_process_)
     : AppLoader(std::move(file_))
@@ -154,6 +176,8 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
 
         dir = file->GetContainingDirectory();
     }
+    // PatchExeFS may replace dir with a parentless overlay, so keep the real one for the romfs.
+    const FileSys::VirtualDir original_dir = dir;
 
     // Read meta to determine title ID
     FileSys::VirtualFile npdm = dir->GetFile("main.npdm");
@@ -268,10 +292,7 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
         LOG_DEBUG(Loader, "loaded module {} @ {:#X}", module, load_addr);
     }
 
-    romfs = dir->GetFile("romfs.bin");
-    if (!romfs) {
-        romfs = dir->GetFile("romfs");
-    }
+    romfs = FindDirectoryRomFS(original_dir);
     if (register_process) {
         LOG_DEBUG(Loader, "Registering directory RomFS for pid={}, present={}",
                   process.GetProcessId(), romfs != nullptr);
