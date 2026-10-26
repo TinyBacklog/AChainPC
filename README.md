@@ -9,7 +9,8 @@ translated code runs on a vendored runtime derived from suyu: HLE kernel and ser
 used as a JIT fallback.
 
 **No game code or assets are part of this repository.** To build a playable binary you need
-your own dump of the game with update 1.0.1 applied, plus your own console keys.
+your own copy of the game with update 1.0.1 applied: either an extracted `exefs/` + `romfs/`
+folder, or the NSPs plus your own console keys.
 
 ## Status
 
@@ -55,11 +56,15 @@ To build the statically recompiled variant from an existing export, add
 
 ## Playing your copy
 
-You need:
+You need one of:
 
-- the base game NSP (`[01007300020FA000][v0]`);
-- update 1.0.1 (`[01007300020FA800][v65536]`). Other versions are refused;
-- your console keys: a directory with `prod.keys`. The default is `~/.local/share/suyu/keys`.
+- **a game folder** (main path): the extracted `exefs/` and `romfs/` of the game with update
+  1.0.1 applied. `exefs/` holds `main`, `sdk`, `rtld` and `main.npdm`. No keys needed;
+- **the NSPs** (alternative): the base game (`[01007300020FA000][v0]`), update 1.0.1
+  (`[01007300020FA800][v65536]`) and your console keys, a directory with `prod.keys` (default
+  `~/.local/share/suyu/keys`). `tools/acre.py extract` turns these into a game folder.
+
+Other game versions are refused.
 
 Build the JIT frontend once, as described in [Build](#build). Then:
 
@@ -67,6 +72,8 @@ Settings live in `~/.config/astralchain/astralchain.ini` (created on the first `
 Saves live in `~/.local/share/astralchain/profile`.
 
 ```sh
+tools/acre.py setup --game-dir GAME_DIR   # the folder with exefs/ and romfs/ (main path)
+# or, from NSPs (needs keys):
 tools/acre.py setup --base "BASE.nsp" --update "UPDATE.nsp" [--keys DIR]
 tools/acre.py export          # C from the dumped modules; incremental
 tools/acre.py build -j16      # astralchain-static (the first build takes a few minutes)
@@ -76,9 +83,13 @@ tools/acre.py run --validate  # 180 s headless, strict AOT: PASS/FAIL
 
 What each command does:
 
-- `setup` installs the update into an isolated profile (`work/profile`). It dumps the game's
-  modules as the emulator loads them, and checks their hashes against `game/version.json`.
-  A modded or older dump is refused.
+- `setup --game-dir` dumps the game's modules from the folder as the emulator loads them (the
+  loader mounts `romfs/` next to `exefs/`), and checks their hashes against
+  `game/version.json`. A modded or older dump is refused. `setup --base/--update` does the
+  same from NSPs: it installs the update into an isolated profile (`work/profile`) first.
+- `extract --base BASE --update UPDATE [--keys DIR]` writes the 1.0.1 game folder
+  (`work/dump-1.0.1`) from the NSPs, for people who have those and keys but no folder. Then
+  run `setup --game-dir` on it.
 - If a run reports fallback sites, `tools/acre.py roots --from work/logs/validate-*.json`
   adds them to `game/roots/`, and the next `export` covers them.
 - On Linux x86-64, `build` inlines the lifted code's guest memory accesses (FM2), which

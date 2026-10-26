@@ -142,7 +142,8 @@ Uma janela, com estados:
      - isto cobre os formatos comuns das ferramentas de extração: um invólucro
        `<titleid>/`, ou `atmosphere/contents/<titleid>/`;
      - os nomes são comparados sem distinção de maiúsculas;
-     - o `main.npdm` é opcional;
+     - o `main.npdm` é obrigatório: o loader precisa dele para o title id e o layout do
+       processo, e toda a extração de exefs o inclui;
      - mais de um par encontrado obriga a pessoa a escolher; zero pares dá um erro claro.
 2. **Verificar** (segundos):
    - a pasta tem `exefs/main`, `exefs/sdk`, `exefs/rtld` e `romfs/`;

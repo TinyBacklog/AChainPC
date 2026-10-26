@@ -31,6 +31,17 @@ Tools for Eden and other subprojects. When adding new scripts please use `#!/bin
 - `cpp-lint.sh`: Homemade dumb C++ linter.
 - `fuzzsettings.cpp`: Fuzz settings files.
 
+## acre.py
+
+`acre.py` drives the AstralChainRe pipeline. See the README, "Playing your copy".
+
+- `setup --game-dir DIR`: main path. Takes the extracted `exefs/` + `romfs/` folder of 1.0.1;
+  no keys or NSPs needed.
+- `setup --base BASE --update UPDATE [--keys DIR]`: alternative, from the NSPs.
+- `extract --base BASE --update UPDATE [--keys DIR]`: only for people with NSPs and keys;
+  writes the game folder to `work/dump-1.0.1`.
+- `export`, `build`, `run`, `bench`: as in the README.
+
 ## Android
 It's recommended to run these scritps after almost any Android change, as they are relatively fast and important both for APK bloat and CI.
 
