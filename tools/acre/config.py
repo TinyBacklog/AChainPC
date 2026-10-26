@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 WORK = REPO / "work"
+DUMP_DIR = WORK / "dump-1.0.1"
 VERSION_FILE = REPO / "game" / "version.json"
 FRONTEND = REPO / "build" / "bin" / "astralchain"
 INI_TEMPLATE = REPO / "frontend" / "astralchain.ini"
@@ -25,6 +26,7 @@ EXIT_EXPORT_FAILED = 23
 EXIT_BUILD_FAILED = 24
 EXIT_VALIDATE_FAILED = 25
 EXIT_PROFILE_MIGRATION = 26
+EXIT_EXTRACT_FAILED = 27
 
 
 def fail(code: int, message: str):

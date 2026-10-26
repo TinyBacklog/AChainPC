@@ -2,6 +2,7 @@
 """AstralChainRe pipeline: your dump + update + keys -> native executable.
 
     acre.py setup --base BASE.nsp --update UPDATE.nsp [--keys DIR]
+    acre.py extract --base BASE.nsp --update UPDATE.nsp [--keys DIR]
     acre.py export
     acre.py build
     acre.py run [--validate [--seconds N]]
@@ -26,6 +27,13 @@ def main(argv=None) -> int:
     p.add_argument("--keys", type=Path, default=config.default_keys_dir(),
                    help="directory holding prod.keys (default: %(default)s)")
     p.add_argument("--skip-update", action="store_true", help=argparse.SUPPRESS)
+
+    p = commands.add_parser("extract", help="development: write the effective 1.0.1 as exefs/ + romfs/ "
+                                            "folders in work/dump-1.0.1")
+    p.add_argument("--base", type=Path, required=True, help="base game NSP (v0)")
+    p.add_argument("--update", type=Path, required=True, help="update 1.0.1 NSP (v65536)")
+    p.add_argument("--keys", type=Path, default=config.default_keys_dir(),
+                   help="directory holding prod.keys (default: %(default)s)")
 
     commands.add_parser("export", help="generate C from the dumped modules (incremental)")
 
@@ -60,6 +68,9 @@ def main(argv=None) -> int:
         if args.update is None and not args.skip_update:
             parser.error("--update is required (the supported version is 1.0.1)")
         setup.run(args.base, None if args.skip_update else args.update, args.keys)
+    elif args.command == "extract":
+        from acre import extract
+        extract.run(args.base, args.update, args.keys)
     elif args.command == "export":
         from acre import export
         export.run()

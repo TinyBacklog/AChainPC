@@ -53,6 +53,7 @@
 #include "frontend_common/content_manager.h"
 #include "frontend/acre_ini_apply.h"
 #include "frontend/acre_tas.h"
+#include "frontend/game_folder.h"
 #include "frontend/overlay/overlay.h"
 #include "input_common/main.h"
 #include "network/network.h"
@@ -134,6 +135,8 @@ static void PrintHelp(const char* argv0) {
                  "    -F, --show-fps    Show the frame rate in the title bar and log it\n"
                  "    --user-dir=PATH   Isolated config, NAND, saves and logs (keys stay external)\n"
                  "    --dump-recomp-inputs=PATH  Dump effective NSO segments and exit before execution\n"
+                 "    --extract-game=DIR  Development: write the -g NSP plus its installed update\n"
+                 "                      as DIR/exefs and DIR/romfs, then exit\n"
                  "    --ini=PATH        astralchain.ini to apply (default: beside the binary, then\n"
                  "                      $XDG_CONFIG_HOME/astralchain/astralchain.ini)\n"
                  "    --install=PATH    Install an NSP (update/DLC) into the profile NAND and exit\n"
@@ -410,6 +413,7 @@ int main(int argc, char** argv) {
     std::string recomp_report;
     std::string recomp_input_dump;
     std::string install_path;
+    std::string extract_path;
     std::optional<std::filesystem::path> ini_path;
     int headless_timeout_seconds = 0;
     int exit_after_seconds = 0;
@@ -431,6 +435,7 @@ int main(int argc, char** argv) {
         {"recomp-stats", required_argument, 0, 'R'},
         {"dump-recomp-inputs", required_argument, 0, 'D'},
         {"install", required_argument, 0, 'I'},
+        {"extract-game", required_argument, 0, 'X'},
         {"ini", required_argument, 0, 'N'},
         {"keys-dir", required_argument, 0, 'K'},
         {"headless-timeout", required_argument, 0, 'T'},
@@ -477,6 +482,7 @@ int main(int argc, char** argv) {
             case 'R': recomp_report = optarg; break;
             case 'D': recomp_input_dump = optarg; headless = true; break;
             case 'I': install_path = optarg; break;
+            case 'X': extract_path = optarg; break;
             case 'N': ini_path = std::filesystem::absolute(optarg); break;
             case 'K': break; // Applied before logging/config initialization.
             case 'T': {
@@ -642,7 +648,8 @@ int main(int argc, char** argv) {
     Common::ConfigureNvidiaEnvironmentFlags();
 
     // Auto-detect ROM / exefs alongside the executable when no -g flag is given
-    if (install_path.empty() && filepath.empty() && !static_cast<u32>(load_parameters.applet_id)) {
+    if (install_path.empty() && extract_path.empty() && filepath.empty() &&
+        !static_cast<u32>(load_parameters.applet_id)) {
 #ifdef _WIN32
         wchar_t exe_path_w[MAX_PATH];
         GetModuleFileNameW(nullptr, exe_path_w, MAX_PATH);
@@ -887,6 +894,20 @@ int main(int argc, char** argv) {
             LOG_CRITICAL(Frontend, "Failed to install '{}' (missing or wrong keys?)", install_path);
             return 1;
         }
+    }
+
+    if (!extract_path.empty()) {
+        // Development: the effective game as a folder, for testing the folder loader.
+        termination = "extract_failed";
+        if (filepath.empty()) {
+            LOG_CRITICAL(Frontend, "--extract-game needs the base NSP with -g");
+            return 1;
+        }
+        const int rc = ExtractGame(system, filepath, std::filesystem::absolute(extract_path));
+        if (rc == 0) {
+            termination = "extracted";
+        }
+        return rc;
     }
 
     // Two separate owning pointers rather than one std::unique_ptr<EmuWindow>:
