@@ -2,6 +2,7 @@
 """AstralChainRe pipeline: your dump + update + keys -> native executable.
 
     acre.py setup --base BASE.nsp --update UPDATE.nsp [--keys DIR]
+    acre.py setup --game-dir DIR
     acre.py extract --base BASE.nsp --update UPDATE.nsp [--keys DIR]
     acre.py export
     acre.py build
@@ -22,7 +23,10 @@ def main(argv=None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
 
     p = commands.add_parser("setup", help="install the update, dump and verify the game modules")
-    p.add_argument("--base", type=Path, required=True, help="base game NSP (v0)")
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--base", type=Path, help="base game NSP (v0)")
+    source.add_argument("--game-dir", type=Path,
+                        help="folder with exefs/ and romfs/ of 1.0.1 (needs no keys and no update)")
     p.add_argument("--update", type=Path, help="update 1.0.1 NSP (v65536)")
     p.add_argument("--keys", type=Path, default=config.default_keys_dir(),
                    help="directory holding prod.keys (default: %(default)s)")
@@ -65,6 +69,11 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.command == "setup":
         from acre import setup
+        if args.game_dir is not None:
+            if args.update is not None:
+                parser.error("--update does not go with --game-dir")
+            setup.run_game_dir(args.game_dir)
+            return 0
         if args.update is None and not args.skip_update:
             parser.error("--update is required (the supported version is 1.0.1)")
         setup.run(args.base, None if args.skip_update else args.update, args.keys)

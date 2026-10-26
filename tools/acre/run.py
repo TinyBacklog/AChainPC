@@ -81,15 +81,15 @@ def run(validate_run: bool = False, seconds: int = 180, extra: list[str] | None 
     ensure_current()
     require_binary(BINARY)
     play_profile, ini = profiles.prepare(record, work)
-    command = [str(BINARY), f"--user-dir={play_profile}", f"--keys-dir={record['keys_dir']}",
-               f"--ini={ini}"]
+    options, target = config.launch_args(record)
+    command = [str(BINARY), f"--user-dir={play_profile}", *options, f"--ini={ini}"]
     if not validate_run:
-        command += [*(extra or []), "-g", record["base"]]
+        command += [*(extra or []), *target]
         raise SystemExit(subprocess.run(command).returncode)
 
     check_seconds(seconds)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     logs = work / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    validate([*command, *(extra or []), "-g", record["base"]],
+    validate([*command, *(extra or []), *target],
              logs / f"validate-{stamp}.json", logs / f"validate-{stamp}.log", seconds)

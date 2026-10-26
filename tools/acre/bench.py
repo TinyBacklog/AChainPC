@@ -157,8 +157,9 @@ def run_one(binary: Path, index: int, snapshot: Path, script: Path, ini: Path, r
     (profile / "tas").mkdir(exist_ok=True)
     shutil.copyfile(script, profile / "tas" / "script0-1.txt")
     log = out_dir / name / "frontend.log"
-    command = [str(binary), f"--user-dir={profile}", f"--keys-dir={record['keys_dir']}", f"--ini={ini}",
-               "--show-fps", "--tas-play", "-g", record["base"]]
+    options, target = config.launch_args(record)
+    command = [str(binary), f"--user-dir={profile}", *options, f"--ini={ini}",
+               "--show-fps", "--tas-play", *target]
     with log.open("w") as out:
         process = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
     try:

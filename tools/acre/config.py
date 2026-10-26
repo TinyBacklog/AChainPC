@@ -64,3 +64,10 @@ def load(work: Path) -> dict:
     if not path.is_file():
         fail(EXIT_NO_SETUP, f"{path} not found; run `acre.py setup` first")
     return json.loads(path.read_text())
+
+
+def launch_args(record: dict) -> tuple[list[str], list[str]]:
+    """Frontend options that go before the extras, and the `-g` target, for a game.json record."""
+    if record.get("game_dir"):
+        return [], ["-g", str(Path(record["game_dir"]) / "exefs" / "main")]
+    return [f"--keys-dir={record['keys_dir']}"], ["-g", record["base"]]
